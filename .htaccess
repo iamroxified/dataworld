@@ -1,0 +1,50 @@
+RewriteEngine On
+
+RewriteCond %{REQUEST_URI} !index\.php
+
+
+#RewriteBase /
+
+RewriteRule    ^step1/?$        user_registrations.php [NC,L]
+
+#Show contents if user omit the .php extension
+RewriteCond %{THE_REQUEST} /([^.]+)\.php [NC]
+RewriteRule ^ /%1 [NC,L,R]
+
+
+#If user type in the .php extension, forcefully remove it
+RewriteCond %{REQUEST_FILENAME}.php -f
+ErrorDocument 404 /getme/404.php
+RewriteRule ^ %{REQUEST_URI}.php [NC,L]
+
+
+
+
+
+RewriteRule ^([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_]+$)\/?$ courses.php?param=$1&param2=$2&param3=$3 [NC]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/agent/$
+RewriteRule ^([a-zA-Z0-9-_]+)\/([a-zA-Z0-9-_]+)\/?$ subcourse.php?param=$1&param2=$2&param3=$3 [NC]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/agent/$
+RewriteRule ^([a-zA-Z0-9-_]+)\/?$ lesson.php?param=$1 [NC]
+
+RewriteRule ^questions/(\d+)/([a-z-]+) index.php?id=$1&title=$2 [L]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
