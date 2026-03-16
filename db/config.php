@@ -46,11 +46,19 @@ function getCurrentUser() {
     return $stmt->fetch();
 }
 
+
+
 function formatPrice($price) {
     return '$' . number_format($price, 2);
 }
 
 function generateOrderNumber() {
     return 'DW' . date('Ymd') . rand(1000, 9999);
+}
+
+function getBaseURL() {
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https' : 'http';
+    $host  = $_SERVER['HTTP_HOST'];
+    return $protocol . "://" . $host;
 }
 ?>

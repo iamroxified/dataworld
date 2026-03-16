@@ -5,34 +5,9 @@ ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
 require_once 'db/config.php';
+require_once 'db/functions.php';
+
 requireLogin();
-
-// Get current user
-$user_id = $_SESSION['user_id'];
-$current_user = getCurrentUser();
-
-// Fetch dataset orders
-$orders_query = "SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC";
-$order_stmt = $pdo->prepare($orders_query);
-$order_stmt->execute([$user_id]);
-$orders = $order_stmt->fetchAll();
-
-// Fetch order items
-$items_query = "SELECT oi.*, d.title FROM order_items oi JOIN datasets d ON oi.dataset_id = d.id WHERE oi.order_id = ?";
-$items_stmt = $pdo->prepare($items_query);
-
-// Fetch analytics requests with order information
-$analytics_query = "SELECT ar.*, o.order_number FROM analytics_requests ar LEFT JOIN orders o ON ar.order_id = o.id WHERE ar.user_id = ? ORDER BY ar.created_at DESC";
-$analytics_stmt = $pdo->prepare($analytics_query);
-$analytics_stmt->execute([$user_id]);
-$analytics_requests = $analytics_stmt->fetchAll();
-
-// Get summary statistics
-$total_orders = count($orders);
-$total_analytics = count($analytics_requests);
-$total_spent = array_sum(array_column($orders, 'total_amount')) + array_sum(array_column($analytics_requests, 'payment_amount'));
-$pending_orders = array_filter($orders, function($order) { return $order['status'] === 'pending'; });
-$pending_analytics = array_filter($analytics_requests, function($req) { return $req['status'] === 'pending'; });
 
 ?>
 <!DOCTYPE html>
@@ -77,7 +52,7 @@ $pending_analytics = array_filter($analytics_requests, function($req) { return $
         <div class="col-12">
           <div class="alert alert-info">
             <h4><i class="bi bi-person-circle"></i> Welcome back,
-              <?php echo htmlspecialchars($current_user['name']); ?>!</h4>
+              <?php echo htmlspecialchars($current_user['username']); ?>!</h4>
             <p class="mb-0">Here's a summary of your activity on DataWorld</p>
           </div>
         </div>
@@ -98,6 +73,14 @@ $pending_analytics = array_filter($analytics_requests, function($req) { return $
             <div class="card-body">
               <h3><?php echo $total_analytics; ?></h3>
               <p class="card-text">Analytics Requests</p>
+            </div>
+          </div>
+        </div>
+          <div class="col-md-3 mb-3">
+          <div class="card text-center bg-success text-white">
+            <div class="card-body">
+              <h3><?php echo get_ref_count($code); ?></h3>
+              <p class="card-text">Referral Count</p>
             </div>
           </div>
         </div>
@@ -155,6 +138,7 @@ $pending_analytics = array_filter($analytics_requests, function($req) { return $
                 <table class="table table-striped">
                   <thead>
                     <tr>
+                      <th>SN</th>
                       <th>Order #</th>
                       <th>Items</th>
                       <th>Total</th>
@@ -164,8 +148,9 @@ $pending_analytics = array_filter($analytics_requests, function($req) { return $
                     </tr>
                   </thead>
                   <tbody>
-                    <?php foreach ($orders as $order): ?>
+                    <?php $sn =1; foreach ($orders as $order): ?>
                     <tr>
+                      <td><?php echo $sn++; ?></td>
                       <td><strong><?php echo htmlspecialchars($order['order_number']); ?></strong></td>
                       <td>
                         <?php

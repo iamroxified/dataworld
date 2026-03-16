@@ -10,7 +10,7 @@ require_once 'db/config.php';
 <head>
   <meta charset="utf-8">
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
-  <title>DataWorld - Data Analysis Global Services</title>
+  <title>SYi-Tech Global Services</title>
  <?php include('nav/links.php'); ?>
 </head>
 
@@ -26,10 +26,10 @@ require_once 'db/config.php';
         <div class="row gy-4">
           <div class="col-lg-6 order-2 order-lg-1 d-flex flex-column justify-content-center">
             <h1 data-aos="fade-up">Empowering your project work with professional data analysis</h1>
-            <p data-aos="fade-up" data-aos-delay="100">Data Analysis Global Services - provide quality Data analysis for your research work such as ND/NCE, B.Sc./HND, PGD, M.Phil/M.Sc. and Ph.D we specialized on Chapter 3 to chapter 6, if needed</p>
+            <p data-aos="fade-up" data-aos-delay="100">SYi-Tech Global Services - provide quality Data analysis for your research work such as ND/NCE, B.Sc./HND, PGD, M.Phil/M.Sc. and Ph.D we specialized on Chapter 3 to chapter 6, if needed</p>
             <div class="d-flex flex-column flex-md-row" data-aos="fade-up" data-aos-delay="200">
-              <a href="datasets.php" class="btn-get-started">Browse Datasets <i class="bi bi-arrow-right"></i></a>
-              <a href="analytics.php" class="btn-watch-video d-flex align-items-center justify-content-center ms-0 ms-md-4 mt-4 mt-md-0"><i class="bi bi-graph-up"></i><span>Request Analysis</span></a>
+              <a href="#" class="btn-get-started">Browse Datasets <i class="bi bi-arrow-right"></i></a>
+              <a href="user/analytics_request.php" class="btn-watch-video d-flex align-items-center justify-content-center ms-0 ms-md-4 mt-4 mt-md-0"><i class="bi bi-graph-up"></i><span>Request Analysis</span></a>
             </div>
           </div>
           <div class="col-lg-6 order-1 order-lg-2 hero-img" data-aos="zoom-out">
@@ -49,12 +49,12 @@ require_once 'db/config.php';
           <div class="col-lg-6 d-flex flex-column justify-content-center" data-aos="fade-up" data-aos-delay="200">
             <div class="content">
               <h3>Who We Are</h3>
-              <h2>Data Analysis Global Services - Your Gateway to Data Excellence</h2>
+              <h2>SYi-Tech Global Services - Your Gateway to Data Excellence</h2>
               <p>
                 We are a leading provider of comprehensive data solutions, offering centralized access to high-quality datasets, professional analytics services, and expert consultation. Our platform serves businesses, researchers, and organizations seeking to harness the power of data for informed decision-making and strategic growth.
               </p>
               <div class="text-center text-lg-start">
-                <a href="#" class="btn-read-more d-inline-flex align-items-center justify-content-center align-self-center">
+                <a href="about" class="btn-read-more d-inline-flex align-items-center justify-content-center align-self-center">
                   <span>Read More</span>
                   <i class="bi bi-arrow-right"></i>
                 </a>
@@ -63,7 +63,7 @@ require_once 'db/config.php';
           </div>
 
           <div class="col-lg-6 d-flex align-items-center" data-aos="zoom-out" data-aos-delay="200">
-            <img src="assets/img/about.jpg" class="img-fluid" alt="">
+            <img src="assets/img/syitech.jpeg" class="img-fluid" alt="">
           </div>
 
         </div>
@@ -167,13 +167,12 @@ require_once 'db/config.php';
 
     </section><!-- /Stats Section -->
 
-    <!-- Features Section -->
     <section id="features" class="features section">
 
       <!-- Section Title -->
       <div class="container section-title" data-aos="fade-up">
-        <h2>Features</h2>
-        <p>Our Advacedd Features<br></p>
+        <h2>Why Choose Our Services</h2>
+        <p>Our advanced capabilities and proven methodologies</p>
       </div><!-- End Section Title -->
 
       <div class="container">
@@ -190,42 +189,42 @@ require_once 'db/config.php';
               <div class="col-md-6" data-aos="fade-up" data-aos-delay="200">
                 <div class="feature-box d-flex align-items-center">
                   <i class="bi bi-check"></i>
-                  <h3>Eos aspernatur rem</h3>
+                  <h3>Expert Team</h3>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6" data-aos="fade-up" data-aos-delay="300">
                 <div class="feature-box d-flex align-items-center">
                   <i class="bi bi-check"></i>
-                  <h3>Facilis neque ipsa</h3>
+                  <h3>Proven Methodologies</h3>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6" data-aos="fade-up" data-aos-delay="400">
                 <div class="feature-box d-flex align-items-center">
                   <i class="bi bi-check"></i>
-                  <h3>Volup amet volupt</h3>
+                  <h3>Scalable Solutions</h3>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6" data-aos="fade-up" data-aos-delay="500">
                 <div class="feature-box d-flex align-items-center">
                   <i class="bi bi-check"></i>
-                  <h3>Rerum omnis sint</h3>
+                  <h3>24/7 Support</h3>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6" data-aos="fade-up" data-aos-delay="600">
                 <div class="feature-box d-flex align-items-center">
                   <i class="bi bi-check"></i>
-                  <h3>Alias possimus</h3>
+                  <h3>Secure & Compliant</h3>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6" data-aos="fade-up" data-aos-delay="700">
                 <div class="feature-box d-flex align-items-center">
                   <i class="bi bi-check"></i>
-                  <h3>Repellendus molli</h3>
+                  <h3>Custom Solutions</h3>
                 </div>
               </div><!-- End Feature Item -->
 
@@ -240,6 +239,11 @@ require_once 'db/config.php';
 
     <!-- Alt Features Section -->
     <section id="alt-features" class="alt-features section">
+     <!-- Section Title -->
+      <div class="container section-title" data-aos="fade-up">
+        <h2>What we do</h2>
+        <p>Our Services<br></p>
+      </div><!-- End Section Title -->
 
       <div class="container">
 
@@ -250,50 +254,74 @@ require_once 'db/config.php';
             <div class="row align-self-center gy-5">
 
               <div class="col-md-6 icon-box">
-                <i class="bi bi-award"></i>
+                <i class="bi bi-pencil-square"></i>
                 <div>
-                  <h4>Corporis voluptates sit</h4>
-                  <p>Consequuntur sunt aut quasi enim aliquam quae harum pariatur laboris nisi ut aliquip</p>
+                  <h4>Project writing and editing</h4>
+                  <p>We help you with writing and editing your projects to ensure they are of high quality.</p>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6 icon-box">
-                <i class="bi bi-card-checklist"></i>
+                <i class="bi bi-bar-chart-line"></i>
                 <div>
-                  <h4>Ullamco laboris nisi</h4>
-                  <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt</p>
+                  <h4>Data analysis (SPSS, Excel, or R)</h4>
+                  <p>We provide data analysis services using SPSS, Excel, or R to help you make sense of your data.</p>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6 icon-box">
-                <i class="bi bi-dribbble"></i>
+                <i class="bi bi-easel"></i>
                 <div>
-                  <h4>Labore consequatur</h4>
-                  <p>Aut suscipit aut cum nemo deleniti aut omnis. Doloribus ut maiores omnis facere</p>
+                  <h4>Seminar and presentation preparation</h4>
+                  <p>We assist you in preparing for your seminars and presentations, ensuring you deliver a compelling message.</p>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6 icon-box">
-                <i class="bi bi-filter-circle"></i>
+                <i class="bi bi-file-earmark-text"></i>
                 <div>
-                  <h4>Beatae veritatis</h4>
-                  <p>Expedita veritatis consequuntur nihil tempore laudantium vitae denat pacta</p>
+                  <h4>Proposal writing</h4>
+                  <p>We help you write convincing proposals to get your research or project approved.</p>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6 icon-box">
-                <i class="bi bi-lightning-charge"></i>
+                <i class="bi bi-book"></i>
                 <div>
-                  <h4>Molestiae dolor</h4>
-                  <p>Et fuga et deserunt et enim. Dolorem architecto ratione tensa raptor marte</p>
+                  <h4>Assignment and report assistance</h4>
+                  <p>We provide assistance with your assignments and reports to help you achieve academic success.</p>
                 </div>
               </div><!-- End Feature Item -->
 
               <div class="col-md-6 icon-box">
-                <i class="bi bi-patch-check"></i>
+                <i class="bi bi-fonts"></i>
                 <div>
-                  <h4>Explicabo consectetur</h4>
-                  <p>Est autem dicta beatae suscipit. Sint veritatis et sit quasi ab aut inventore</p>
+                  <h4>Typing and document formatting (APA, MLA, etc.)</h4>
+                  <p>We offer typing and document formatting services to ensure your documents are well-structured and adhere to citation styles like APA and MLA.</p>
+                </div>
+              </div><!-- End Feature Item -->
+
+              <div class="col-md-6 icon-box">
+                <i class="bi bi-search"></i>
+                <div>
+                  <h4>Plagiarism checking and correction</h4>
+                  <p>We check for plagiarism in your work and help you correct it to maintain academic integrity.</p>
+                </div>
+              </div><!-- End Feature Item -->
+
+              <div class="col-md-6 icon-box">
+                <i class="bi bi-question-square"></i>
+                <div>
+                  <h4>Questionnaire design and data entry</h4>
+                  <p>We assist in designing effective questionnaires and accurately entering the collected data for analysis.</p>
+                </div>
+              </div><!-- End Feature Item -->
+
+              <div class="col-md-6 icon-box">
+                <i class="bi bi-lightbulb"></i>
+                <div>
+                  <h4>Research topic selection and development</h4>
+                  <p>We guide you in selecting and developing a research topic that is both interesting and feasible.</p>
                 </div>
               </div><!-- End Feature Item -->
 
@@ -326,8 +354,8 @@ require_once 'db/config.php';
             <h3>Ready to Transform Your Data?</h3>
             <p>Discover the power of data-driven insights with DataWorld. Browse our comprehensive datasets, request custom analytics, or consult with our experts to unlock your business potential.</p>
             <div class="d-flex flex-wrap gap-3">
-              <a class="cta-btn align-self-start" href="marketplace.php">Browse Datasets</a>
-              <a class="cta-btn align-self-start" href="analytics.php">Request Analysis</a>
+              <a class="cta-btn align-self-start" href="dataset.php">Browse Datasets</a>
+              <a class="cta-btn align-self-start" href="user/analytics_request.php">Request Analysis</a>
               <a class="cta-btn align-self-start" href="services.php">Our Services</a>
             </div>
           </div>
@@ -348,7 +376,7 @@ require_once 'db/config.php';
 
       <!-- Section Title -->
       <div class="container section-title" data-aos="fade-up">
-        <h2>Explore DataWorld</h2>
+        <h2>Explore SYi-Tech</h2>
         <p>Discover all that we have to offer</p>
       </div><!-- End Section Title -->
 

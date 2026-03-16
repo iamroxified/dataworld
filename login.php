@@ -10,54 +10,43 @@ $error = '';
 $success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    echo "<div class='alert alert-info'>Form submitted - processing login...</div>";
     
     $email = trim($_POST['email'] ?? '');
     $password = $_POST['password'] ?? '';
     
-    echo "<div class='alert alert-info'>Email: " . htmlspecialchars($email) . "</div>";
-    echo "<div class='alert alert-info'>Password length: " . strlen($password) . "</div>";
     
     if (empty($email) || empty($password)) {
         $error = 'Please fill in all fields.';
-        echo "<div class='alert alert-warning'>Empty fields detected</div>";
     } else {
         try {
-            echo "<div class='alert alert-info'>Attempting database query...</div>";
             $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
             $stmt->execute([$email]);
             $user = $stmt->fetch();
             
             if ($user) {
-                echo "<div class='alert alert-info'>User found: " . htmlspecialchars($user['name']) . "</div>";
-                echo "<div class='alert alert-info'>Verifying password...</div>";
                 
                 if (password_verify($password, $user['password'])) {
-                    echo "<div class='alert alert-success'>Password verified! Setting session...</div>";
                     $_SESSION['user_id'] = $user['id'];
                     $_SESSION['user_email'] = $user['email'];
                     $_SESSION['user_name'] = $user['first_name'].' '.$user['last_name'];
                     $_SESSION['user_role'] = $user['role'];
                     
-                    echo "<div class='alert alert-success'>Session set. Redirecting...</div>";
-                    
-                    // Add a small delay to see the debug messages
-                    echo "<script>setTimeout(function() { window.location = ''; }, 2000);</script>";
-                    
                     // Redirect to intended page or analytics
-                    $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'dashboard';
+                    if($user['role'] == 'customer'  ){
+                        $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'user/index';
+                    } else {
+                        $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'admin/index';
+                    }
+                    // $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'user/index';
                     header('Location: ' . $redirect);
                     exit();
                 } else {
-                    echo "<div class='alert alert-danger'>Password verification failed</div>";
                     $error = 'Invalid email or password.';
                 }
             } else {
-                echo "<div class='alert alert-danger'>No user found with email: " . htmlspecialchars($email) . "</div>";
                 $error = 'Invalid email or password.';
             }
         } catch (PDOException $e) {
-            echo "<div class='alert alert-danger'>Database error: " . htmlspecialchars($e->getMessage()) . "</div>";
             $error = 'Login failed. Please try again.';
         }
     }
@@ -122,13 +111,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                     <div class="col-12 text-center">
                       <p class="mt-3"> Don't have an account? <a href="register.php">Register here</a></p>
-                      <p>
-                        <strong>Demo Accounts:</strong><br>
-                        <small>
-                          <strong>Admin:</strong> admin@test.com / admin123<br>
-                          <strong>Customer:</strong> john@test.com / password123
-                        </small>
-                      </p>
+                      <p class="mt-1"><a href="forgot_password.php">Forgot Password?</a></p>
                     </div>
                   </div>
                 </form>

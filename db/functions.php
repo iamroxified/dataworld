@@ -173,8 +173,44 @@ function get_time_ago( $time )
  function username($mid){
   $get =  QueryDB("SELECT * from users where username ='$mid' ");
   $getter = $get->fetch(PDO::FETCH_ASSOC);
-  return $getter['lname'].' '.$getter['fname'].' '.$getter['mname'];
+  return $getter['last_name'].' '.$getter['first_name'];
 }
+
+function get_ref_count($id){
+ return QueryDB("SELECT COUNT(*) from users where referral ='$id' ")->fetchColumn();
+
+}
+
+function get_user_wallet_balance($user_id) {
+    try {
+        $stmt = QueryDB("SELECT balance FROM user_wallet WHERE user_id = ? LIMIT 1", [$user_id]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($result) {
+            return (float)$result['balance'];
+        } else {
+            // Create wallet if it doesn't exist
+            create_user_wallet($user_id);
+            return 0.00;
+        }
+    } catch (Exception $e) {
+        error_log("Wallet balance fetch error: " . $e->getMessage());
+        return 0.00;
+    }
+}
+
+function create_user_wallet($user_id, $initial_balance = 0.00) {
+    try {
+        $stmt = QueryDB("INSERT IGNORE INTO user_wallet (user_id, balance) VALUES (?, ?)", [$user_id, $initial_balance]);
+        return true;
+    } catch (Exception $e) {
+        error_log("Wallet creation error: " . $e->getMessage());
+        return false;
+    }
+}
+
+
+
 
  function get_country_code($mid){
   $get =  QueryDB("SELECT sortname from countries where id ='$mid' ");
@@ -189,7 +225,7 @@ function get_time_ago( $time )
 }
 
 function get_user_details($email){
-  $get = QueryDB("SELECT * FROM users WHERE username = '$email' ");
+  $get = QueryDB("SELECT * FROM users WHERE id = '$email' ");
   return $get->fetch(PDO::FETCH_ASSOC);
 }
 
@@ -484,3 +520,10 @@ function get_all_f_users(){
   return QueryDB("SELECT COUNT(*) FROM f_users ")->fetchColumn();
 }
 ///////////////////////////////////////
+
+function get_user_by_email($email) {
+    global $pdo;
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
+    $stmt->execute([$email]);
+    return $stmt->fetch(PDO::FETCH_ASSOC);
+}

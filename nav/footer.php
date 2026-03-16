@@ -1,13 +1,12 @@
-
-  <footer id="footer" class="footer">
+<footer id="footer" class="footer">
 
 
     <div class="container footer-top">
       <div class="row gy-4">
         <div class="col-lg-4 col-md-6 footer-about">
             
-          <a href="index.html" class="d-flex align-items-center"><img src="assets/img/logo_dark.jpg" alt="" class="img-fluid img" width="100" height="100">
-            <span class="sitename">Data Analysis Global Services</span>
+          <a href="index.html" class="d-flex align-items-center"><img src="assets/img/logo_dark.jpg" alt="" class="img-fluid img" width="50%" height="100">
+            <span class="sitename"></span>
           </a>
           <div class="footer-contact pt-3">
             <p>Federal University, Lokoja</p>
@@ -30,8 +29,8 @@
         <div class="col-lg-2 col-md-3 footer-links">
           <h4>Our Services</h4>
           <ul>
-            <li><i class="bi bi-chevron-right"></i> <a href="datasets">Datasets</a></li>
-            <li><i class="bi bi-chevron-right"></i> <a href="analytics">Analytics</a></li>
+            <li><i class="bi bi-chevron-right"></i> <a href="#">Datasets</a></li>
+            <li><i class="bi bi-chevron-right"></i> <a href="user/analytics_request.php">Analytics</a></li>
             <li><i class="bi bi-chevron-right"></i> <a href="#">Projects</a></li>
             <li><i class="bi bi-chevron-right"></i> <a href="#">Consultation</a></li>
           </ul>
@@ -52,7 +51,7 @@
     </div>
 
     <div class="container copyright text-center mt-4">
-      <p>© <span>Copyright</span> <strong class="px-1 sitename">Data Analysis Global Services</strong> <span>All Rights Reserved</span></p>
+      <p>© <span>Copyright</span> <strong class="px-1 sitename">Syi-Tech Global Services</strong> <span>All Rights Reserved</span></p>
       <div class="credits">
         <!-- All the links in the footer should remain intact. -->
         <!-- You can delete the links only if you've purchased the pro version. -->
@@ -76,6 +75,8 @@
   <script src="assets/vendor/imagesloaded/imagesloaded.pkgd.min.js"></script>
   <script src="assets/vendor/isotope-layout/isotope.pkgd.min.js"></script>
   <script src="assets/vendor/swiper/swiper-bundle.min.js"></script>
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
 
   <!-- Main JS File -->
   <script src="assets/js/main.js"></script>

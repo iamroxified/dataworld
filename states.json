@@ -333,16 +333,20 @@
     {
         "Kogi" :
         {
-            "1" : "ECWA School of Nursing (ECWASON)",
-            "2" : "Federal College of Education, Okene",
-            "3" : "Federal University Of Lokoja",
+              "1" : "Federal University Lokoja",
+               "11" : "Confluence University of Science and Technology, Osara",
+            "12" : "Prince Abubakar Audu University, Anyigba",
+            "2" : "ECWA School of Nursing (ECWASON)",
+            "3" : "Federal College of Education, Okene",
+          
             "4" : "Kogi State College of Education",
             "5" : "Kogi State College of Nursing",
             "6" : "Kogi State Polytechnic, Lokoja",
-            "7" : "KSU Kogi State University, Anyigba",
+            "7" : "KSU Kogi State University, Kabba",
             "8" : "National Open University of Nigeria",
             "9" : "SUL Salem University, Lokoja",
             "10" : "The Federal Polytechnic Idah"
+           
         }
     },
     {

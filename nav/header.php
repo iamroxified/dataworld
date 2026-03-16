@@ -4,30 +4,31 @@
     <a href="index.html" class="logo d-flex align-items-center me-auto">
       <!-- Uncomment the line below if you also wish to use an image logo -->
       <img src="assets/img/logo_dark.jpg" alt="">
-      <h1 class="sitename">DAGS</h1>
+      <h1 class="sitename">SYi-Tech</h1>
     </a>
 
     <nav id="navmenu" class="navmenu">
       <ul>
-        <li><a href="index" class="active">Home<br></a></li>
-        <li><a href="blog">Blog</a></li>
-        <li><a href="datasets">Datasets</a></li>
-        <li><a href="analytics">Analytics</a></li>
-        <li><a href="services">Services</a></li>
-        <li><a href="portfolio">Testimonial</a></li>
+        <li><a href="index.php" class="active">Home<br></a></li>
+        <li><a href="blog.html">Blog</a></li>
+        <li><a href="#">Datasets</a></li>
+        <li><a href="user/analytics_request.php">Analytics</a></li>
+        <li><a href="services.php">Services</a></li>
+        <li><a href="testimonials.php">Testimonial</a></li>
         <li class="dropdown"><a href="#"><span>About Us</span> <i class="bi bi-chevron-down toggle-dropdown"></i></a>
           <ul>
-            <li><a href="about">About DAGS</a></li>
-            <li><a href="contact">Contact</a></li>
-            <li><a href="faq">FAQ</a></li>
-            <li><a href="#">Contact Support</a></li>
+            <li><a href="about.php">About SYi-Tech</a></li>
+            <li><a href="contact.php">Contact</a></li>
+            <li><a href="faq.php">FAQ</a></li>
+            <!-- <li><a href="#">Contact Support</a></li> -->
           </ul>
         </li>
         <?php if (isLoggedIn()): ?>
         <li class="dropdown"><a href="#"><span>Account</span> <i class="bi bi-chevron-down toggle-dropdown"></i></a>
           <ul>
-            <li><a href="cart.php">Cart</a></li>
-            <li><a href="dashboard.php">Dashboard</a></li>
+            <li><a href="user/cart.php">Cart</a></li>
+            <li><a href="user/index">Dashboard</a></li>
+            <li><a href="user/referral">Referral</a></li>
             <li><a href="#">Profile</a></li>
             <li><a href="logout">Logout</a></li>
           </ul>

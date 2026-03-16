@@ -1,3 +1,9 @@
+<?php
+require_once 'db/config.php';
+// requireLogin();
+
+// $user_id = $_SESSION['user_id'];
+?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -32,7 +38,7 @@
       <!-- Section Title -->
       <div class="container section-title" data-aos="fade-up">
         <h2>Get In Touch</h2>
-        <p>Ready to transform your data? Contact our experts today</p>
+        <p>Contact us for any of our services</p>
       </div><!-- End Section Title -->
 
       <div class="container" data-aos="fade-up" data-aos-delay="100">
@@ -46,8 +52,8 @@
                 <div class="info-item" data-aos="fade" data-aos-delay="200">
                   <i class="bi bi-geo-alt"></i>
                   <h3>Address</h3>
-                  <p>123 Data Street</p>
-                  <p>Analytics City, AC 12345</p>
+                  <p>School Gate, Federal University, Lokoja</p>
+                  <p>Adankolo Campus, Adankolo, Lokoja, Kogi State</p>
                 </div>
               </div><!-- End Info Item -->
 
@@ -55,8 +61,8 @@
                 <div class="info-item" data-aos="fade" data-aos-delay="300">
                   <i class="bi bi-telephone"></i>
                   <h3>Call Us</h3>
-                  <p>+1 (555) 123-4567</p>
-                  <p>+1 (555) 987-6543</p>
+                  <p>+234 903 720 5456</p>
+                  <!-- <p>+1 (555) 987-6543</p> -->
                 </div>
               </div><!-- End Info Item -->
 
@@ -64,8 +70,9 @@
                 <div class="info-item" data-aos="fade" data-aos-delay="400">
                   <i class="bi bi-envelope"></i>
                   <h3>Email Us</h3>
-                  <p>info@dataworld.com</p>
-                  <p>support@dataworld.com</p>
+                  <p>syitechkasali@gmail.com</p>
+                  <p>info@syitech.com.ng</p>
+                  <p>support@syitech.com.ng</p>
                 </div>
               </div><!-- End Info Item -->
 
@@ -179,7 +186,7 @@
               <div class="faq-item">
                 <h3>How long does a typical project take?</h3>
                 <div class="faq-content">
-                  <p>Project timelines vary depending on complexity and scope. Simple analytics projects can be completed in 1-2 weeks, while comprehensive machine learning solutions may take 2-3 months. We provide detailed timelines during project planning.</p>
+                  <p>Project timelines vary depending on complexity and scope. Simple analytics projects can be completed in 3-5 working days, while comprehensive machine learning solutions may take 1 week. We provide detailed timelines during project planning.</p>
                 </div>
                 <i class="faq-toggle bi bi-chevron-right"></i>
               </div><!-- End Faq item-->

@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS users (
     country VARCHAR(50),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    is_active BOOLEAN DEFAULT TRUE
+    is_active BOOLEAN DEFAULT TRUE,
+    referral_code VARCHAR(255)
 );
 
 -- Categories table

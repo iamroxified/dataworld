@@ -1,0 +1,2 @@
+ALTER TABLE binding_requests
+ADD COLUMN copies INT(11) NOT NULL DEFAULT 1;
