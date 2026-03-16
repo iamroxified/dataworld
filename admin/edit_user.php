@@ -19,8 +19,8 @@ $new_password = null;
 
 // Handle password reset
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset_password'])) {
-    // Generate a random password
-    $new_password = bin2hex(random_bytes(4)); // 8 characters long
+    // Set the new password to 'password'
+    $new_password = 'password';
     $hashed_password = password_hash($new_password, PASSWORD_DEFAULT);
 
     // Update the user's password in the database
@@ -124,7 +124,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['reset_password'])) {
                     <div class="form-group">
                       <label for="role">Role</label>
                       <select name="role" id="role" class="form-control">
-                        <option value="user" <?php if ($user['role'] === 'user') echo 'selected'; ?>>User</option>
+                        <option value="customer" <?php if ($user['role'] === 'customer') echo 'selected'; ?>>Customer</option>
                         <option value="admin" <?php if ($user['role'] === 'admin') echo 'selected'; ?>>Admin</option>
                         <option value="operator" <?php if ($user['role'] === 'operator') echo 'selected'; ?>>Operator</option>
                       </select>
@@ -142,13 +142,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['reset_password'])) {
                     <?php if (isset($_GET['error']) && $_GET['error'] === 'password_reset_failed'): ?>
                         <div class="alert alert-danger">Failed to reset password.</div>
                     <?php endif; ?>
-                    <?php if ($new_password): ?>
+                    <?php if (isset($_POST['reset_password']) && $new_password): ?>
                         <div class="alert alert-success">
-                            Password has been reset successfully. New password is: <strong><?php echo $new_password; ?></strong>
+                            Password has been reset successfully to: <strong>password</strong>
                         </div>
                     <?php endif; ?>
                   <form method="post" action="">
-                    <p>Click the button below to reset the password for this user. A new password will be generated and displayed.</p>
+                    <p>Click the button below to reset the user's password to '<strong>password</strong>'.</p>
                     <button type="submit" name="reset_password" class="btn btn-warning">Reset Password</button>
                   </form>
                 </div>

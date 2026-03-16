@@ -9,6 +9,14 @@ if(!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Get current user details for header
+$current_user_id = $_SESSION['user_id'];
+$user_details = get_user_details($current_user_id);
+$last_name = $user_details['last_name'] ?? '';
+$first_name = $user_details['first_name'] ?? '';
+$username = $user_details['username'] ?? '';
+$email = $user_details['email'] ?? '';
+
 if(!isset($_GET['id'])) {
     header('Location: all_users.php');
     exit;
@@ -76,3 +84,6 @@ if(!$user) {
             </div>
             <?php include('nav/footer.php'); ?>
         </div>
+    </div>
+</body>
+</html>
