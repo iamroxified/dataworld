@@ -1,3 +1,36 @@
+<?php
+$adminHeaderUser = null;
+
+if (isset($currentUser) && is_array($currentUser)) {
+    $adminHeaderUser = $currentUser;
+} elseif (function_exists('getCurrentUser')) {
+    $resolvedUser = getCurrentUser();
+    if (is_array($resolvedUser)) {
+        $adminHeaderUser = $resolvedUser;
+    }
+} elseif (isset($_SESSION['user_id']) && function_exists('get_user_details')) {
+    $resolvedUser = get_user_details((int) $_SESSION['user_id']);
+    if (is_array($resolvedUser)) {
+        $adminHeaderUser = $resolvedUser;
+    }
+}
+
+$adminDisplayLastName = trim((string) ($last_name ?? ($adminHeaderUser['last_name'] ?? '')));
+$adminDisplayFirstName = trim((string) ($first_name ?? ($adminHeaderUser['first_name'] ?? '')));
+$adminDisplayUsername = trim((string) ($username ?? ($adminHeaderUser['username'] ?? '')));
+$adminDisplayEmail = trim((string) ($email ?? ($adminHeaderUser['email'] ?? '')));
+
+if ($adminDisplayLastName === '') {
+    $adminDisplayLastName = $adminDisplayFirstName !== '' ? $adminDisplayFirstName : 'Admin';
+}
+
+if ($adminDisplayUsername === '') {
+    $adminDisplayUsername = trim($adminDisplayFirstName . ' ' . $adminDisplayLastName);
+    if ($adminDisplayUsername === '') {
+        $adminDisplayUsername = 'Admin';
+    }
+}
+?>
    <div class="main-header">
      <div class="main-header-logo">
        <!-- Logo Header -->
@@ -195,7 +228,7 @@
                </div>
                <span class="profile-username">
                  <span class="op-7">Hi,</span>
-                 <span class="fw-bold"><?php echo $last_name; ?></span>
+                 <span class="fw-bold"><?php echo htmlspecialchars($adminDisplayLastName); ?></span>
                </span>
              </a>
              <ul class="dropdown-menu dropdown-user animated fadeIn">
@@ -206,8 +239,8 @@
                        <img src="assets/img/profile.jpg" alt="image profile" class="avatar-img rounded" />
                      </div>
                      <div class="u-text">
-                       <h4><?php echo $username; ?></h4>
-                       <p class="text-muted"><?php echo $email; ?></p>
+                       <h4><?php echo htmlspecialchars($adminDisplayUsername); ?></h4>
+                       <p class="text-muted"><?php echo htmlspecialchars($adminDisplayEmail); ?></p>
                        <a href="#" class="btn btn-xs btn-primary btn-sm">View Profile</a>
                      </div>
                    </div>

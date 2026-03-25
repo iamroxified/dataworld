@@ -13,6 +13,7 @@
         <li><a href="blog.html">Blog</a></li>
         <li><a href="#">Datasets</a></li>
         <li><a href="user/analytics_request.php">Analytics</a></li>
+        <!-- <li><a href="user/make_request.php">AI Automation</a></li> -->
         <li><a href="services.php">Services</a></li>
         <li><a href="testimonials.php">Testimonial</a></li>
         <li class="dropdown"><a href="#"><span>About Us</span> <i class="bi bi-chevron-down toggle-dropdown"></i></a>
@@ -28,7 +29,7 @@
           <ul>
             <li><a href="user/cart.php">Cart</a></li>
             <li><a href="user/index">Dashboard</a></li>
-            <li><a href="user/referral">Referral</a></li>
+            <li><a href="user/referrals">Referral</a></li>
             <li><a href="#">Profile</a></li>
             <li><a href="logout">Logout</a></li>
           </ul>

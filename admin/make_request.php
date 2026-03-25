@@ -67,8 +67,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $order_id = $pdo->lastInsertId();
 
         // Insert analytics request with order reference
-        $stmt = $pdo->prepare("INSERT INTO analytics_requests (user_id, state, institution, department, program_type, country, software, project_topic, chapter3_file, questionaire, payment_amount, currency, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$user_id, $state, $institution, $department, $program_type, $country, $software, $project_topic, $chapter3_file, $questionaire, $payment_amount, $currency, $order_id]);
+        $has_topic = $project_topic !== '' ? 'yes' : 'no';
+        $completed_work = '';
+        $stmt = $pdo->prepare("INSERT INTO analytics_requests (user_id, state, institution, department, program_type, country, software, project_topic, has_topic, chapter3_file, questionaire, payment_amount, currency, order_id, completed_work) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$user_id, $state, $institution, $department, $program_type, $country, $software, $project_topic, $has_topic, $chapter3_file, $questionaire, $payment_amount, $currency, $order_id, $completed_work]);
         
         // Redirect to payment page
         header("Location: initialize_payment.php?order_id=" . $order_id);

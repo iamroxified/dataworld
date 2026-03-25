@@ -36,8 +36,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Redirect to intended page or analytics
                     if($user['role'] == 'customer'  ){
-                        $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'user/index';
+
+                    // print "<script>alert('User role: customer');</script>";
+                       $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'user/index';
                     } else {
+                      // print "<script>alert('Admin')</script>";
+
                         $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'admin/index';
                     }
                     // $redirect = isset($_GET['redirect']) ? $_GET['redirect'] : 'user/index';

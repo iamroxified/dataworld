@@ -37,6 +37,11 @@
                 <p>Analysis Request</p>
               </a>
             </li>
+            <li class="nav-item">
+              <a href="admin_settings.php"> <i class="fas fa-robot"></i>
+                <p>AI Review Queue</p>
+              </a>
+            </li>
                <li class="nav-item">
               <a href="all_users"> <i class="fas fa-user"></i>
                 <p>All Users</p>

@@ -5,6 +5,8 @@ RewriteCond %{REQUEST_URI} !index\.php
 
 #RewriteBase /
 
+RewriteRule ^downloads/([A-Za-z0-9._-]+)$ download.php?file=$1 [NC,QSA,L]
+
 RewriteRule    ^step1/?$        user_registrations.php [NC,L]
 
 #Show contents if user omit the .php extension

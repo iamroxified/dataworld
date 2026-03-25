@@ -85,61 +85,130 @@ if ($pdo) {
 
 // Load states data
 $states_data = json_decode(file_get_contents('../states.json'), true);
+$error_message = '';
+
+function storeAnalyticsRequestUpload(array $file, string $absoluteDirectory, string $relativeDirectory, array $allowedExtensions, int $maxBytes, string $fieldLabel): ?string {
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return null;
+    }
+
+    if (($file['error'] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+        throw new RuntimeException($fieldLabel . ' upload failed. Please try again.');
+    }
+
+    $extension = strtolower(pathinfo((string) ($file['name'] ?? ''), PATHINFO_EXTENSION));
+    if ($extension === '' || !in_array($extension, $allowedExtensions, true)) {
+        throw new RuntimeException($fieldLabel . ' must be one of: ' . strtoupper(implode(', ', $allowedExtensions)) . '.');
+    }
+
+    $fileSize = (int) ($file['size'] ?? 0);
+    if ($fileSize <= 0 || $fileSize > $maxBytes) {
+        throw new RuntimeException($fieldLabel . ' exceeds the allowed upload size.');
+    }
+
+    $tmpName = (string) ($file['tmp_name'] ?? '');
+    if ($tmpName === '' || !is_uploaded_file($tmpName)) {
+        throw new RuntimeException('Invalid ' . strtolower($fieldLabel) . ' upload detected.');
+    }
+
+    if (!is_dir($absoluteDirectory) && !mkdir($absoluteDirectory, 0775, true) && !is_dir($absoluteDirectory)) {
+        throw new RuntimeException('Unable to prepare upload storage for ' . strtolower($fieldLabel) . '.');
+    }
+
+    $storedName = uniqid('', true) . '.' . $extension;
+    $relativePath = trim($relativeDirectory, '/') . '/' . $storedName;
+    $destination = rtrim($absoluteDirectory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $storedName;
+
+    if (!move_uploaded_file($tmpName, $destination)) {
+        throw new RuntimeException('Unable to save the ' . strtolower($fieldLabel) . ' upload.');
+    }
+
+    return $relativePath;
+}
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Process the form submission here
-    $user_id = $_SESSION['user_id'];
-    $state = $_POST['state'] ?? '';
-    $institution = $_POST['institution'] ?? '';
-    $department = $_POST['department'] ?? '';
-    $program_type = $_POST['program_type'] ?? '';
-    $country = $_POST['country'] ?? '';
-    $software = $_POST['software'] ?? '';
-    $project_topic = $_POST['project_topic'] ?? '';
-    $payment_amount = $_POST['payment_amount'] ?? '';
-    $currency = $_POST['currency'] ?? '';
-    $agreed_policy = isset($_POST['agreed_policy']);
+    try {
+        // Process the form submission here
+        $user_id = $_SESSION['user_id'];
+        $state = trim((string) ($_POST['state'] ?? ''));
+        $institution = trim((string) ($_POST['institution'] ?? ''));
+        $department = trim((string) ($_POST['department'] ?? ''));
+        $program_type = trim((string) ($_POST['program_type'] ?? ''));
+        $country = trim((string) ($_POST['country'] ?? ''));
+        $software = trim((string) ($_POST['software'] ?? ''));
+        $project_topic = trim((string) ($_POST['project_topic'] ?? ''));
+        $submission_mode = ($_POST['submission_mode'] ?? 'full_upload') === 'topic_only' ? 'topic_only' : 'full_upload';
+        $payment_amount = $_POST['payment_amount'] ?? '';
+        $currency = trim((string) ($_POST['currency'] ?? ''));
+        $agreed_policy = isset($_POST['agreed_policy']);
 
-    // Handle file upload if chapter 3 is uploaded
-    $chapter3_file = null;
-    if (isset($_FILES['chapter3']) && $_FILES['chapter3']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = '../uploads/chapter3/';
-        if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
+        if ($project_topic === '') {
+            throw new RuntimeException('Project topic is required.');
         }
-        $file_extension = pathinfo($_FILES['chapter3']['name'], PATHINFO_EXTENSION);
-        $chapter3_file = 'uploads/chapter3/' . uniqid() . '.' . $file_extension;
-        move_uploaded_file($_FILES['chapter3']['tmp_name'], '../' . $chapter3_file);
-    }
 
-    // Handle payment receipt upload
-    $questionaire = null;
-    if (isset($_FILES['questionaire']) && $_FILES['questionaire']['error'] === UPLOAD_ERR_OK) {
-        $upload_dir = '../uploads/questionaire/';
-        if (!is_dir($upload_dir)) {
-            mkdir($upload_dir, 0777, true);
+        if (!$agreed_policy) {
+            throw new RuntimeException('You must agree to the policy before submitting a request.');
         }
-        $file_extension = pathinfo($_FILES['questionaire']['name'], PATHINFO_EXTENSION);
-        $questionaire = 'uploads/questionaire/' . uniqid() . '.' . $file_extension;
-        move_uploaded_file($_FILES['questionaire']['tmp_name'], '../' . $questionaire);
-    }
 
-    // Save to database
-    if ($pdo) {
-        // Create order for analytics request
-        $order_number = generateOrderNumber();
-        $order_stmt = $pdo->prepare("INSERT INTO orders (user_id, order_number, total_amount, status, payment_method, payment_status) VALUES (?, ?, ?, 'pending', 'paystack', 'pending')");
-        $order_stmt->execute([$user_id, $order_number, $payment_amount]);
-        $order_id = $pdo->lastInsertId();
+        if (!is_numeric($payment_amount) || (float) $payment_amount <= 0) {
+            throw new RuntimeException('A valid payment amount is required.');
+        }
 
-        // Insert analytics request with order reference
-        $stmt = $pdo->prepare("INSERT INTO analytics_requests (user_id, state, institution, department, program_type, country, software, project_topic, chapter3_file, questionaire, payment_amount, currency, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$user_id, $state, $institution, $department, $program_type, $country, $software, $project_topic, $chapter3_file, $questionaire, $payment_amount, $currency, $order_id]);
-        
-        // Redirect to payment page
-        header("Location: initialize_payment.php?order_id=" . $order_id);
-        exit();
+        // Full upload mode keeps the existing chapter/dataset upload flow. Topic-only mode allows admin to trigger automation later.
+        $chapter3_file = null;
+        if ($submission_mode === 'full_upload') {
+            $chapter3_file = storeAnalyticsRequestUpload(
+                $_FILES['chapter3'] ?? [],
+                '../uploads/chapter3',
+                'uploads/chapter3',
+                ['pdf', 'doc', 'docx'],
+                12 * 1024 * 1024,
+                'Chapter 1-3 file'
+            );
+        }
+
+        if ($submission_mode === 'full_upload' && !$chapter3_file) {
+            throw new RuntimeException('Chapter 1-3 file is required for full upload mode.');
+        }
+
+        // This field is reused as dataset upload for automation-ready requests.
+        $questionaire = null;
+        if ($submission_mode === 'full_upload') {
+            $questionaire = storeAnalyticsRequestUpload(
+                $_FILES['questionaire'] ?? [],
+                '../uploads/questionaire',
+                'uploads/questionaire',
+                ['csv', 'xls', 'xlsx', 'pdf', 'doc', 'docx'],
+                15 * 1024 * 1024,
+                'Dataset file'
+            );
+        }
+
+        if ($submission_mode === 'full_upload' && !$questionaire) {
+            throw new RuntimeException('Dataset file is required for full upload mode.');
+        }
+
+        // Save to database
+        if ($pdo) {
+            // Create order for analytics request
+            $order_number = generateOrderNumber();
+            $order_stmt = $pdo->prepare("INSERT INTO orders (user_id, order_number, total_amount, status, payment_method, payment_status) VALUES (?, ?, ?, 'pending', 'paystack', 'pending')");
+            $order_stmt->execute([$user_id, $order_number, $payment_amount]);
+            $order_id = $pdo->lastInsertId();
+
+            // Insert analytics request with order reference
+            $has_topic = $project_topic !== '' ? 'yes' : 'no';
+            $completed_work = '';
+            $stmt = $pdo->prepare("INSERT INTO analytics_requests (user_id, state, institution, department, program_type, country, software, project_topic, has_topic, chapter3_file, questionaire, payment_amount, currency, order_id, completed_work) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([$user_id, $state, $institution, $department, $program_type, $country, $software, $project_topic, $has_topic, $chapter3_file, $questionaire, $payment_amount, $currency, $order_id, $completed_work]);
+
+            // Redirect to payment page
+            header("Location: initialize_payment.php?order_id=" . $order_id);
+            exit();
+        }
+    } catch (Throwable $throwable) {
+        $error_message = $throwable->getMessage();
     }
 }
 }
@@ -221,6 +290,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                   <h4 class="card-title">Project Analytics Request Form</h4>
                 </div>
                 <div class="card-body">
+                  <?php if (!empty($error_message)): ?>
+                  <div class="alert alert-danger"><?php echo htmlspecialchars($error_message); ?></div>
+                  <?php endif; ?>
                   <form method="POST" enctype="multipart/form-data" id="analyticsForm">
 
                     <!-- Academic Information -->
@@ -294,6 +366,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="form-section">
                       <h4 class="mb-3"><i class="fas fa-chart-bar"></i> Project Information</h4>
                       <div class="row">
+                        <div class="col-md-12 mb-3">
+                          <label class="form-label">Submission Mode <span class="required">*</span></label>
+                          <div class="form-check">
+                            <input class="form-check-input" type="radio" name="submission_mode" id="submissionFull"
+                              value="full_upload" checked>
+                            <label class="form-check-label" for="submissionFull">
+                              Upload Chapter 1-3 and dataset for admin-triggered automation
+                            </label>
+                          </div>
+                          <div class="form-check">
+                            <input class="form-check-input" type="radio" name="submission_mode" id="submissionTopic"
+                              value="topic_only">
+                            <label class="form-check-label" for="submissionTopic">
+                              Topic only request
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="row">
                         <div class="col-md-6 mb-3">
                           <label for="software" class="form-label">Software to be Used <span
                               class="required">*</span></label>
@@ -311,19 +402,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                           <textarea class="form-control" id="project_topic" name="project_topic" rows="3" required
                             placeholder="Enter your project topic or indicate if you don't have one"></textarea>
                         </div>
-                        <div class="col-md-6 mb-3" id="chapter3Upload">
+                        <div class="col-md-6 mb-3 upload-required-field" id="chapter3Upload">
                           <label for="chapter3" class="form-label">Upload Chapter 1- 3 <span
                               class="required">*</span></label>
                           <input type="file" class="form-control" id="chapter3" name="chapter3"
                             accept=".pdf,.doc,.docx" required>
                           <small class="text-muted">Accepted formats: PDF, DOC, DOCX</small>
                         </div>
-                        <div class="col-md-6 mb-3" id="chapter3Upload">
-                          <label for="questionaire" class="form-label">Upload Your Questionaire <span
+                        <div class="col-md-6 mb-3 upload-required-field" id="datasetUpload">
+                          <label for="questionaire" class="form-label">Upload Dataset / Questionnaire <span
                               class="required">*</span></label>
                           <input type="file" class="form-control" id="questionaire" name="questionaire"
-                            accept=".pdf,.doc,.docx" required>
-                          <small class="text-muted">Accepted formats: PDF, DOC, DOCX</small>
+                            accept=".csv,.xls,.xlsx,.pdf,.doc,.docx" required>
+                          <small class="text-muted">Preferred for automation: CSV, XLS, XLSX. Documents are still allowed.</small>
                         </div>
                       </div>
                     </div>
@@ -428,6 +519,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
           }
         }
+
+        function toggleSubmissionMode() {
+          const selectedMode = document.querySelector('input[name="submission_mode"]:checked')?.value || 'full_upload';
+          const requiresUploads = selectedMode === 'full_upload';
+          document.querySelectorAll('.upload-required-field').forEach((wrapper) => {
+            wrapper.style.display = requiresUploads ? '' : 'none';
+            wrapper.querySelectorAll('input[type="file"]').forEach((input) => {
+              input.required = requiresUploads;
+            });
+          });
+        }
+
+        document.querySelectorAll('input[name="submission_mode"]').forEach((radio) => {
+          radio.addEventListener('change', toggleSubmissionMode);
+        });
+        toggleSubmissionMode();
       </script>
     </div>
   </div>

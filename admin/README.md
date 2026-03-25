@@ -1,61 +1,83 @@
-# Kaiadmin Lite - Free Bootstrap 5 Admin Dashboard
-![kaiadminlitethumb (1)](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/4793c6b9-7991-4502-8633-14d9ed0ea486)
+You are an expert full-stack PHP developer with 10+ years experience in Laravel/plain PHP, OpenAI integration, file handling, and academic automation platforms.
 
-This time, I want to introduce you Kaiadmin Lite – a free Bootstrap 5 Admin Dashboard built to easily manage and visualize business data.
+I have an existing PHP website (syitech.com.ng) for students doing data analysis projects. I want to add a full AI automation feature exactly as described in the attached PDF "Syitech Automations (95).pdf".
 
-With Kaiadmin Lite, you can complete development faster with no design skills required. Save 1000s of hours of designing and coding work, as we've already done that for you.
+The goal is: Students upload their project Chapters 1-3 (PDF/Word) + Dataset (CSV/Excel), or just the project topic. The system automatically generates Chapters 4 (Data Presentation & Analysis), Chapter 5 (Summary, Conclusion & Recommendations), and the Abstract — with real tables, graphs, interpretations, hypothesis testing, and Word/PDF output.
 
-Don't worry about getting started – we've documented how to get started using this dashboard template and utilizing the available components and plugins, making it easy to leverage the full potential of Kaiadmin Bootstrap 5 Admin Dashboard.
+Follow the EXACT workflow from the PDF:
 
-**Product Detail** : https://themekita.com/kaiadmin-lite-bootstrap-5-dashboard.html
+1. Student Uploads Chapters 1-3 + Dataset
+2. Backend reads Methodology from Chapter 3
+3. Admin sets AI options on dashboard:
+   - Degree Level: NCE/ND, BSc/HND, PGD, MSc/MPhil, PhD
+   - Pages: 30, 50, 100
+   - Graphs: Yes/No
+   - Hypothesis Testing: Yes / Auto-detect
+   - Output Format: Word / PDF
+4. AI generates Chapters 4, 5 & Abstract
+5. Tables → Graphs → Interpretation → Source
+6. Word/PDF generated
+7. Secure download link
+8. Student notified by email
+9. Admin final review
 
-**Live Preview** : https://themekita.com/demo-kaiadmin-lite-bootstrap-dashboard/livepreview/demo1/
+Use this EXACT AI system prompt (the "brain" from the PDF):
 
-# Get Kaiadmin PRO
+"You are a Nigerian academic data analyst.
+Use Chapter 3 methodology to analyze the dataset.
 
-![bg_themekitacom](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/195bfcb3-f587-4920-bfba-a583244116ad)
-[Product Detail](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/) |  [Buy This](https://themekita.lemonsqueezy.com/buy/526b603e-8eb3-4dcb-a7a3-842375952df5)
+Generate:
+- Chapter 4: Data Presentation & Analysis
+- Chapter 5: Summary, Conclusion & Recommendations
+- Abstract
 
-***
-### [Kaiadmin - Classic Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo1/)
-![Kaiadmin - Classic Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/106e027a-4ffe-4856-b729-0e6939c0473d)
+Rules:
+1. Every table must have: Title, Frequency & Percentage, Source: Fieldwork, 2025, Detailed interpretation in paragraph form.
+2. Where applicable, generate graphs and output the exact data points in JSON format like {\"chart_type\":\"bar\",\"data\":{\"labels\":[...],\"values\":[...]}} so PHP can create real charts.
+3. Use formal academic tone (Nigerian universities standard).
+4. Detect and test hypotheses automatically using the stated method.
+5. Total length: [pages from admin setting] pages.
 
-***
-### [Kaiadmin - White Classic Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo2/)
-![Kaiadmin - White Classic Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/ab70a0f7-116d-46ad-9037-a4081b0db763)
+Output in clean Markdown with clear headings, tables, and JSON graph blocks."
 
-***
-### [Kaiadmin - Dark Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo3/)
-![Kaiadmin - Dark Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/1a645dc4-d150-45d7-9883-1955b0666d18)
+Technical requirements for my existing PHP site (PHP 8.1+, MySQL):
 
-***
-### [Kaiadmin - Creative Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo4/)
-![Kaiadmin - Creative Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/fccc0204-3cb7-45dd-b0a5-532c57af3c12)
+- Use Composer libraries:
+  - openai-php/client
+  - smalot/pdfparser
+  - phpoffice/phpword
+  - phpoffice/phpspreadsheet
+  - mpdf/mpdf
+  - vlucas/phpdotenv
+  - phpmailer/phpmailer
 
-***
-### [Kaiadmin - Trendy Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo5/)
-![Kaiadmin - Trendy Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/bd9d4ce8-08a3-48bd-975e-3d77e5c51388)
+- Create these files (give me complete, ready-to-use code for each):
+  1. upload.php (student upload form handler — extracts text from Chapters 1-3 and dataset summary)
+  2. admin_settings.php (dashboard form with checkboxes/selects exactly as PDF page 4)
+  3. generate.php (builds full prompt, calls OpenAI GPT-4o with temperature 0.2, parses output, creates real DOCX with tables + embedded charts using PHPWord, or PDF with mPDF)
+  4. download.php (secure download link)
+  5. database.sql (new table structure for student_jobs)
 
-***
-### [Kaiadmin - Trendy 2 Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo6/)
-![Kaiadmin - Trendy 2 Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/3cdd531f-16e0-4c4e-bfbd-89f80d3a25fe)
+- Store files in /uploads/ folder with unique IDs
+- Generate download link like: https://syitech.com.ng/downloads/student123-analysis.docx
+- Send email notification to student
+- Keep admin review queue (status = ready → reviewed)
 
-***
-### [Kaiadmin - Horizontal Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo7/)
-![Kaiadmin - Horizontal Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/2cac93cc-2542-43d9-9072-8625bdd2f8ad)
+- Make everything undetectable as AI: low temperature, Nigerian academic style, no AI buzzwords.
 
-***
-### [Kaiadmin - Enterprise Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo8/)
-![Kaiadmin - Enterprise Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/ce2aa3f8-1f62-4ca1-87cd-111b74e50940)
+- Handle both "upload full chapters + dataset" and simple "project topic only" mode (if topic only, generate placeholder Chapters 1-3 outline first).
 
-***
-### [Kaiadmin - Futuristic Dashboard](https://themekita.com/demo-kaiadmin-pro-bootstrap-dashboard/livepreview/examples/demo9/)
-![Kaiadmin - Futuristic Dashboard](https://github.com/Hizrian/kaiadmin-lite/assets/10692084/83f79f3d-d248-4d01-ac15-9c98bee3ca9f)
+- Security: validate uploads, store API key in .env, limit file size, prevent direct access to generated files.
 
+Provide the code in this exact order:
+1. Full database.sql
+2. .env example
+3. upload.php (complete)
+4. admin_settings.php (complete)
+5. generate.php (complete with OpenAI call and PHPWord chart insertion)
+6. download.php
+7. How to integrate these files into my existing student dashboard and admin panel.
 
+Add comments in the code explaining where each part matches the PDF. Make the code production-ready, clean, and modular so I can drop it into my current website without conflicts.
 
-
-
-
-
-
+Start your response with "✅ INTEGRATION READY — Here is the complete PHP code for your Syitech AI automation system" and then give all files one by one.
