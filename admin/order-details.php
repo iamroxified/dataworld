@@ -115,7 +115,7 @@ if (!$request) {
                   <p><strong>Email:</strong> <?php echo htmlspecialchars($request['email']); ?></p>
                   <p><strong>Phone:</strong> <?php echo htmlspecialchars($request['phone']); ?></p>
                   <p><strong>Amount:</strong> <?php echo htmlspecialchars($request['currency']); ?><?php echo number_format($request['payment_amount'], 2); ?></p>
-                  <p><strong>Payment Status:</strong> <span class="badge bg-<?php echo $request['payment_status'] === 'paid' ? 'success' : 'warning'; ?>"><?php echo ucfirst($request['payment_status']); ?></span></p>
+                  <p><strong>Payment Status:</strong> <span class="badge bg-<?php echo in_array(($request['payment_status'] ?? ''), ['paid', 'completed', 'success'], true) ? 'success' : (($request['payment_status'] ?? '') === 'failed' ? 'danger' : 'warning'); ?>"><?php echo ucfirst($request['payment_status']); ?></span></p>
                   <p><strong>Order Status:</strong> <span class="badge bg-info"><?php echo ucfirst($request['order_status']); ?></span></p>
                   <p><strong>Date:</strong> <?php echo date('M d, Y', strtotime($request['created_at'])); ?></p>
                   

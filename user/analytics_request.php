@@ -116,6 +116,8 @@ $analytics_requests = $analytics_stmt->fetchAll();
                                 $payment_status_class = [
                                     'pending' => 'warning',
                                     'paid' => 'success',
+                                    'completed' => 'success',
+                                    'success' => 'success',
                                     'failed' => 'danger'
                                 ];
                                 $p_class = $payment_status_class[$request['payment_status']] ?? 'secondary';

@@ -38,6 +38,11 @@
               </a>
             </li>
             <li class="nav-item">
+              <a href="binding_request.php"> <i class="fas fa-book"></i>
+                <p>Binding Requests</p>
+              </a>
+            </li>
+            <li class="nav-item">
               <a href="admin_settings.php"> <i class="fas fa-robot"></i>
                 <p>AI Review Queue</p>
               </a>

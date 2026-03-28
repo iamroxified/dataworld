@@ -15,22 +15,42 @@ use PhpOffice\PhpWord\PhpWord;
 use Smalot\PdfParser\Parser as PdfParser;
 
 const SYI_AI_SYSTEM_PROMPT = <<<'PROMPT'
-You are a Nigerian academic data analyst.
-Use Chapter 3 methodology to analyze the dataset.
+You are a Nigerian academic data analyst and research methodologist.
+Use the student's existing methodology, questionnaire/instrument, sample size, equations, and stated method of data analysis to generate the result chapters.
 
-Generate:
-- Chapter 4: Data Presentation & Analysis
-- Chapter 5: Summary, Conclusion & Recommendations
-- Abstract
+Generate the result in this exact order:
+1. Abstract
+2. Chapter Four: Data Presentation and Analysis
+3. Degree-based closing chapters as specified below
 
-Rules:
-1. Every table must have: Title, Frequency & Percentage, Source: Fieldwork, 2025, Detailed interpretation in paragraph form.
-2. Where applicable, generate graphs and output the exact data points in JSON format like {"chart_type":"bar","data":{"labels":[...],"values":[...]}} so PHP can create real charts.
-3. Use formal academic tone (Nigerian universities standard).
-4. Detect and test hypotheses automatically using the stated method.
-5. Total length: [pages from admin setting] pages.
+Degree-based closing chapter rule:
+[chapter plan from degree setting]
 
-Output in clean Markdown with clear headings, tables, and JSON graph blocks.
+Mandatory rules:
+1. Abstract must come first.
+2. Use full chapter headings with the word "and", never "&".
+3. Chapter Four must be titled exactly "Chapter Four: Data Presentation and Analysis".
+4. Use SPSS-style table presentation in Chapter Four wherever quantitative analysis is being presented. Where applicable, use clear SPSS-like columns such as Frequency, Percent, Valid Percent, and Cumulative Percent without merging any cells.
+5. No table should be merged.
+6. Every questionnaire item and every research question must be treated accordingly in tabular form where applicable.
+7. Every table must include a title, Source: Fieldwork, 2025, and an interpretation immediately below the table.
+8. Every interpretation below a table must be at least 150 words.
+9. Hypothesis testing must follow the stated inferential method in the work and include the proper test table with a well-detailed interpretation of at least 150 words.
+10. Consider the sample size, research instrument, and stated method of data analysis before generating any analysis.
+11. If equations or mathematical formulae are stated in the work, apply them appropriately.
+12. Include Discussion of Findings in the proper chapter structure for the degree level.
+13. Include qualitative analysis whenever the methodology or instrument indicates qualitative or mixed-method analysis.
+14. Every graph must include a minimum 300-word interpretation explaining the trend, comparison, and implication to the study.
+15. Every graph must have a figure title positioned below the graph. Include the figure title in the JSON block using a title field and do not output a separate standalone caption paragraph.
+16. All sections and subsections must be properly numbered in academic style, for example 4.1, 4.2, 4.3, 5.1, 5.2.
+17. Chapter headings must be written in a centralised academic style.
+18. Where graphs are selected, use bar charts by default unless the data structure clearly requires a different chart type.
+19. Graphs must be readable, correspond to the tables, and be accompanied by exact JSON chart blocks like {"chart_type":"bar","title":"Figure 4.1: Example Title","data":{"labels":[...],"values":[...]}} for PHP rendering.
+20. Remove all asterisks. Do not use "*" anywhere in the final output.
+21. Use formal academic tone in line with Nigerian university standards.
+22. Total target length: [pages from admin setting] pages.
+
+Output only clean Markdown with headings, tables, detailed interpretations, and JSON chart blocks.
 PROMPT;
 
 const SYI_TOPIC_ONLY_PROMPT = <<<'PROMPT'
@@ -129,6 +149,28 @@ function syiAiSlug(string $value): string
 function syiAiUuid(): string
 {
     return bin2hex(random_bytes(16));
+}
+
+function syiAiRecommendedPagesForDegree(string $degreeLevel): int
+{
+    return match (trim($degreeLevel)) {
+        'NCE/ND', 'BSc/HND' => 30,
+        'MSc/MPhil' => 70,
+        'PhD' => 100,
+        default => 50,
+    };
+}
+
+function syiAiChapterPlanForDegree(string $degreeLevel): string
+{
+    return in_array(trim($degreeLevel), ['MSc/MPhil', 'PhD'], true)
+        ? 'For MSc/MPhil and PhD, Chapter Four must contain Data Presentation and Analysis only, Chapter Five must be Discussion of Findings, and Chapter Six must contain Summary of the Study, Conclusion, Recommendations, Limitations of the Study, and Suggestions for Further Studies.'
+        : 'For NCE/ND, BSc/HND, and PGD, Chapter Four must end with Discussion of Findings as its final subsection, and Chapter Five must contain Summary of the Study, Conclusion, and Recommendations.';
+}
+
+function syiAiDegreeUsesChapterSix(string $degreeLevel): bool
+{
+    return in_array(trim($degreeLevel), ['MSc/MPhil', 'PhD'], true);
 }
 
 function syiAiEnsureStorage(string $projectRoot): array
@@ -1024,12 +1066,15 @@ function syiAiParseRetryHeader(?string $value): ?float
 
 function syiAiGenerateTopicOutline(Client $client, array $job): string
 {
+    $degreeLevel = (string) ($job['degree_level'] ?? 'BSc/HND');
+    $targetPages = (int) ($job['target_pages'] ?? syiAiRecommendedPagesForDegree($degreeLevel));
+
     $messages = [
         ['role' => 'system', 'content' => SYI_TOPIC_ONLY_PROMPT],
         ['role' => 'user', 'content' => implode("\n\n", [
             'Project topic: ' . ($job['project_topic'] ?? ''),
-            'Degree level: ' . ($job['degree_level'] ?? 'BSc/HND'),
-            'Target pages for the final work: ' . ($job['target_pages'] ?? 50),
+            'Degree level: ' . $degreeLevel,
+            'Target pages for the final work: ' . $targetPages,
         ])],
     ];
 
@@ -1038,9 +1083,16 @@ function syiAiGenerateTopicOutline(Client $client, array $job): string
     return $response['content'];
 }
 
-function syiAiBuildSystemPrompt(int $pages): string
+function syiAiBuildSystemPrompt(array $job): string
 {
-    return str_replace('[pages from admin setting]', (string) $pages, SYI_AI_SYSTEM_PROMPT);
+    $pages = (int) ($job['target_pages'] ?? syiAiRecommendedPagesForDegree((string) ($job['degree_level'] ?? 'BSc/HND')));
+    $degreeLevel = (string) ($job['degree_level'] ?? 'BSc/HND');
+
+    return str_replace(
+        ['[pages from admin setting]', '[chapter plan from degree setting]'],
+        [(string) $pages, syiAiChapterPlanForDegree($degreeLevel)],
+        SYI_AI_SYSTEM_PROMPT
+    );
 }
 
 function syiAiTruncate(string $text, int $maxLength): string
@@ -1101,24 +1153,201 @@ function syiAiCompactDatasetSummary(array $datasetSummary): array
     return $compact;
 }
 
+function syiAiMoveAbstractFirst(string $markdown): string
+{
+    $markdown = preg_replace("/\r\n|\r/", "\n", $markdown) ?? $markdown;
+
+    if (!preg_match('/(^|\n)(#{1,6}\s*)?abstract\b.*?(?=\n(#{1,6}\s*(chapter|abstract)\b|chapter\s+(four|five|six)\b)|\z)/is', $markdown, $matches, PREG_OFFSET_CAPTURE)) {
+        return trim($markdown);
+    }
+
+    $abstractBlock = trim((string) $matches[0][0]);
+    $abstractOffset = (int) $matches[0][1];
+    $before = trim(substr($markdown, 0, $abstractOffset));
+    $after = trim(substr($markdown, $abstractOffset + strlen((string) $matches[0][0])));
+
+    $remaining = trim(implode("\n\n", array_filter([$before, $after], static fn($value) => trim((string) $value) !== '')));
+
+    return trim($abstractBlock . ($remaining !== '' ? "\n\n" . $remaining : ''));
+}
+
+function syiAiNormalizeAcademicHeading(array $job, string $heading): string
+{
+    $heading = trim(str_replace('&', 'and', $heading));
+    $usesChapterSix = syiAiDegreeUsesChapterSix((string) ($job['degree_level'] ?? ''));
+
+    if (preg_match('/^abstract\b/i', $heading) === 1) {
+        return 'Abstract';
+    }
+
+    if (preg_match('/^chapter\s*(4|four)\b/i', $heading) === 1) {
+        return 'Chapter Four: Data Presentation and Analysis';
+    }
+
+    if ($usesChapterSix) {
+        if (preg_match('/^chapter\s*(5|five)\b/i', $heading) === 1) {
+            return 'Chapter Five: Discussion of Findings';
+        }
+
+        if (preg_match('/^chapter\s*(6|six)\b/i', $heading) === 1) {
+            return 'Chapter Six: Summary of the Study, Conclusion and Recommendations';
+        }
+    }
+
+    if (preg_match('/^chapter\s*(5|five)\b/i', $heading) === 1) {
+        return 'Chapter Five: Summary of the Study, Conclusion and Recommendations';
+    }
+
+    return $heading;
+}
+
+function syiAiNormalizeAcademicHeadings(array $job, string $markdown): string
+{
+    $lines = preg_split("/\r\n|\r|\n/", $markdown) ?: [];
+
+    foreach ($lines as $index => $line) {
+        if (preg_match('/^(#{1,6}\s*)(.+)$/', $line, $matches) === 1) {
+            $lines[$index] = $matches[1] . syiAiNormalizeAcademicHeading($job, $matches[2]);
+            continue;
+        }
+
+        $trimmed = trim($line);
+        if ($trimmed === '') {
+            continue;
+        }
+
+        if (preg_match('/^(abstract|chapter\s*(4|four|5|five|6|six)\b.*)$/i', $trimmed) === 1) {
+            $lines[$index] = syiAiNormalizeAcademicHeading($job, $trimmed);
+        }
+    }
+
+    return trim(implode("\n", $lines));
+}
+
+function syiAiExtractChapterNumberFromHeading(string $heading): ?int
+{
+    $heading = trim($heading);
+
+    if (preg_match('/\bchapter\s*(4|four)\b/i', $heading) === 1) {
+        return 4;
+    }
+
+    if (preg_match('/\bchapter\s*(5|five)\b/i', $heading) === 1) {
+        return 5;
+    }
+
+    if (preg_match('/\bchapter\s*(6|six)\b/i', $heading) === 1) {
+        return 6;
+    }
+
+    return null;
+}
+
+function syiAiApplySectionNumbering(array $job, string $markdown): string
+{
+    $lines = preg_split("/\r\n|\r|\n/", $markdown) ?: [];
+    $currentChapter = null;
+    $sectionCounters = [];
+
+    foreach ($lines as $index => $line) {
+        if (preg_match('/^(#{1,6}\s*)(.+)$/', $line, $matches) !== 1) {
+            continue;
+        }
+
+        $prefix = $matches[1];
+        $heading = trim($matches[2]);
+
+        if (preg_match('/^abstract\b/i', $heading) === 1) {
+            $lines[$index] = $prefix . 'Abstract';
+            $currentChapter = null;
+            continue;
+        }
+
+        $chapterNumber = syiAiExtractChapterNumberFromHeading($heading);
+        if ($chapterNumber !== null) {
+            $currentChapter = $chapterNumber;
+            $sectionCounters[$chapterNumber] = 0;
+            $lines[$index] = $prefix . syiAiNormalizeAcademicHeading($job, $heading);
+            continue;
+        }
+
+        if ($currentChapter === null) {
+            continue;
+        }
+
+        if (preg_match('/^\d+\.\d+\b/', $heading) === 1) {
+            continue;
+        }
+
+        $sectionCounters[$currentChapter] = ($sectionCounters[$currentChapter] ?? 0) + 1;
+        $lines[$index] = $prefix . $currentChapter . '.' . $sectionCounters[$currentChapter] . ' ' . $heading;
+    }
+
+    return trim(implode("\n", $lines));
+}
+
+function syiAiFinalizeAcademicMarkdown(array $job, string $markdown): string
+{
+    $markdown = preg_replace("/\r\n|\r/", "\n", $markdown) ?? $markdown;
+    $markdown = str_replace('*', '', $markdown);
+    $markdown = str_replace(' & ', ' and ', $markdown);
+    $markdown = str_replace('& Analysis', 'and Analysis', $markdown);
+    $markdown = str_replace('& Recommendations', 'and Recommendations', $markdown);
+    $markdown = syiAiNormalizeAcademicHeadings($job, $markdown);
+    $markdown = syiAiMoveAbstractFirst($markdown);
+    $markdown = syiAiApplySectionNumbering($job, $markdown);
+
+    return trim($markdown);
+}
+
 function syiAiBuildGenerationUserPrompt(array $job): string
 {
     $datasetSummary = json_decode((string) ($job['dataset_summary_json'] ?? ''), true) ?: [];
     $compactDatasetSummary = syiAiCompactDatasetSummary($datasetSummary);
+    $degreeLevel = (string) ($job['degree_level'] ?? 'BSc/HND');
+    $targetPages = (int) ($job['target_pages'] ?? syiAiRecommendedPagesForDegree($degreeLevel));
     $analysisPackage = [
         'project_topic' => $job['project_topic'] ?? '',
-        'degree_level' => $job['degree_level'] ?? 'BSc/HND',
+        'degree_level' => $degreeLevel,
+        'recommended_pages_for_degree' => syiAiRecommendedPagesForDegree($degreeLevel),
+        'target_pages' => $targetPages,
+        'estimated_sample_size' => $datasetSummary['row_count'] ?? null,
+        'chapter_structure_rule' => syiAiChapterPlanForDegree($degreeLevel),
         'graphs_required' => !empty($job['include_graphs']) ? 'Yes' : 'No',
+        'graph_default_type' => !empty($job['include_graphs']) ? 'bar' : 'none',
+        'graph_interpretation_minimum_words' => 300,
+        'graph_caption_rule' => 'Each graph must have a figure title positioned below the graph and included in the JSON title field. Do not output a separate caption paragraph outside the JSON block.',
         'hypothesis_setting' => $job['hypothesis_mode'] ?? 'auto-detect',
         'output_format' => strtoupper((string) ($job['output_format'] ?? 'word')),
         'submission_mode' => $job['submission_mode'] ?? 'full_upload',
         'detected_method' => syiAiDetectMethod((string) ($job['methodology_text'] ?? ''), $datasetSummary),
         'methodology_excerpt' => syiAiTruncate((string) ($job['methodology_text'] ?? ''), 3500),
-        'chapters_1_to_3_excerpt' => syiAiTruncate((string) ($job['chapters_text'] ?? ''), 5000),
+        'chapters_1_to_3_and_instrument_excerpt' => syiAiTruncate((string) ($job['chapters_text'] ?? ''), 6500),
         'topic_outline' => syiAiTruncate((string) ($job['chapter_outline_markdown'] ?? ''), 2500),
         'dataset_summary' => $compactDatasetSummary,
         'admin_notes' => (string) ($job['admin_notes'] ?? ''),
         'workflow_order' => 'Tables -> Graphs -> Interpretation -> Source',
+        'section_numbering_rule' => 'All sections and subsections must be properly numbered in academic format such as 4.1, 4.2, 5.1, 6.1.',
+        'special_rules' => [
+            'Abstract first',
+            'Use Chapter Four: Data Presentation and Analysis',
+            'Use SPSS-format tables in Chapter Four',
+            'Use Frequency, Percent, Valid Percent, and Cumulative Percent columns where applicable',
+            'Do not merge any table cell',
+            'Treat all research questions',
+            'Treat all questionnaire items in tabular form where applicable',
+            'Each table interpretation must be 150 words or more',
+            'Each graph interpretation must be 300 words or more',
+            'Each graph interpretation must explain trend, comparison, and implication to the study',
+            'Each graph must have a figure title placed below the graph',
+            'Put each graph title in the JSON title field and do not output a separate caption paragraph',
+            'Where graphs are selected, use bar charts by default',
+            'Chapter headings should be centralised in academic style',
+            'Hypothesis tables must align with the stated inferential method',
+            'Include discussion of findings',
+            'Include qualitative analysis where applicable',
+            'Remove all asterisks',
+        ],
     ];
 
     if (($job['submission_mode'] ?? '') === 'topic_only' && $datasetSummary === []) {
@@ -1132,26 +1361,286 @@ function syiAiBuildGenerationUserPrompt(array $job): string
     return implode("\n\n", [
         'Use the following project pack to produce the final answer.',
         json_encode($analysisPackage, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-        'Graph rule: when graphs are required, output fenced json blocks with chart_type, labels and values exactly as instructed.',
+        'Graph rule: when graphs are required, output fenced json blocks with chart_type, title, labels and values exactly as instructed.',
         'Document order rule: keep the result in this order whenever relevant: tables, then graphs, then interpretation, then source note.',
     ]);
 }
 
+function syiAiApproxWordsPerPage(array $job): int
+{
+    return !empty($job['include_graphs']) ? 220 : 260;
+}
+
+function syiAiTargetWordCount(array $job): int
+{
+    $degreeLevel = (string) ($job['degree_level'] ?? 'BSc/HND');
+    $targetPages = (int) ($job['target_pages'] ?? syiAiRecommendedPagesForDegree($degreeLevel));
+    return max(2500, $targetPages * syiAiApproxWordsPerPage($job));
+}
+
+function syiAiCountWords(string $markdown): int
+{
+    $text = preg_replace('/```.*?```/s', ' ', $markdown) ?? $markdown;
+    $text = preg_replace('/[|#`>\-\*\[\]\(\)_]/u', ' ', $text) ?? $text;
+    preg_match_all('/[\p{L}\p{N}]+(?:[\'-][\p{L}\p{N}]+)*/u', $text, $matches);
+    return count($matches[0] ?? []);
+}
+
+function syiAiPromptExcerpt(string $text, int $maxLength = 9000): string
+{
+    $text = trim($text);
+    if ($text === '' || mb_strlen($text, 'UTF-8') <= $maxLength) {
+        return $text;
+    }
+
+    $headLength = (int) floor($maxLength * 0.55);
+    $tailLength = max(1000, $maxLength - $headLength - 40);
+
+    $head = mb_substr($text, 0, $headLength, 'UTF-8');
+    $tail = mb_substr($text, -$tailLength, null, 'UTF-8');
+
+    return trim($head . "\n\n[...truncated for prompt context...]\n\n" . $tail);
+}
+
+function syiAiSectionGenerationPlan(array $job): array
+{
+    $usesChapterSix = syiAiDegreeUsesChapterSix((string) ($job['degree_level'] ?? ''));
+    $targetWords = syiAiTargetWordCount($job);
+    $abstractWords = min(450, max(250, (int) round($targetWords * 0.05)));
+    $bodyWords = max(1800, $targetWords - $abstractWords);
+
+    if ($usesChapterSix) {
+        $chapterFourWords = max(4200, (int) round($bodyWords * 0.66));
+        $chapterFiveWords = max(1800, (int) round($bodyWords * 0.16));
+        $chapterSixWords = max(1600, $bodyWords - $chapterFourWords - $chapterFiveWords);
+
+        return [
+            'chapter_four' => [
+                'key' => 'chapter_four',
+                'heading' => 'Chapter Four: Data Presentation and Analysis',
+                'min_words' => $chapterFourWords,
+                'max_passes' => 5,
+                'instructions' => 'Generate only Chapter Four. Treat all research questions and questionnaire items in SPSS-style tables where applicable. Include all quantitative analysis, hypothesis testing, qualitative analysis where applicable, readable bar-chart references where graphs are enabled, source notes, and detailed interpretations of at least 150 words per table. Every graph must include its figure title in the JSON title field and be followed by an interpretation of at least 300 words covering trend, comparison, and implication to the study. Do not place Discussion of Findings in Chapter Four. Number the subsections properly such as 4.1, 4.2, 4.3. Do not generate Chapter Five, Chapter Six, or the Abstract in this response.',
+            ],
+            'chapter_five' => [
+                'key' => 'chapter_five',
+                'heading' => 'Chapter Five: Discussion of Findings',
+                'min_words' => $chapterFiveWords,
+                'max_passes' => 3,
+                'instructions' => 'Generate only Chapter Five: Discussion of Findings. Discuss the major findings in relation to the generated results, research questions, hypotheses, objectives, and qualitative evidence where applicable. Compare the findings with relevant literature and explain the implications of the findings. Number the subsections properly such as 5.1, 5.2, 5.3. Do not generate the Abstract, Chapter Four, or Chapter Six in this response.',
+            ],
+            'chapter_six' => [
+                'key' => 'chapter_six',
+                'heading' => 'Chapter Six: Summary of the Study, Conclusion and Recommendations',
+                'min_words' => $chapterSixWords,
+                'max_passes' => 3,
+                'instructions' => 'Generate only Chapter Six. Include the numbered subheadings 6.1 Summary of Findings, 6.2 Conclusion, 6.3 Recommendations, 6.4 Limitations of the Study, and 6.5 Suggestions for Further Studies. Write them in a clear academic sequence and keep the chapter logically connected. Do not generate the Abstract or earlier chapters in this response.',
+            ],
+            'abstract' => [
+                'key' => 'abstract',
+                'heading' => 'Abstract',
+                'min_words' => $abstractWords,
+                'max_passes' => 2,
+                'instructions' => 'Generate only the Abstract based on the full already-generated study body. Make it concise, formal, and academically polished. Do not generate any chapter in this response.',
+            ],
+        ];
+    }
+
+    $chapterFourWords = max(3200, (int) round($bodyWords * 0.74));
+    $chapterFiveWords = max(1400, $bodyWords - $chapterFourWords);
+
+    return [
+        'chapter_four' => [
+            'key' => 'chapter_four',
+            'heading' => 'Chapter Four: Data Presentation and Analysis',
+            'min_words' => $chapterFourWords,
+            'max_passes' => 5,
+                'instructions' => 'Generate only Chapter Four. Treat all research questions and questionnaire items in SPSS-style tables where applicable. Include all quantitative analysis, hypothesis testing, qualitative analysis where applicable, readable bar-chart references where graphs are enabled, source notes, and detailed interpretations of at least 150 words per table. Every graph must include its figure title in the JSON title field and be followed by an interpretation of at least 300 words covering trend, comparison, and implication to the study. The final subsection in this chapter must be a detailed Discussion of Findings. Number the subsections properly such as 4.1, 4.2, 4.3. Do not generate Chapter Five or the Abstract in this response.',
+        ],
+        'chapter_five' => [
+            'key' => 'chapter_five',
+            'heading' => 'Chapter Five: Summary of the Study, Conclusion and Recommendations',
+            'min_words' => $chapterFiveWords,
+            'max_passes' => 3,
+            'instructions' => 'Generate only Chapter Five. Include the numbered subheadings 5.1 Summary of Findings, 5.2 Conclusion, and 5.3 Recommendations, and add any other relevant closing points where useful. Keep the chapter well structured, clear, and academically written. Do not generate the Abstract or earlier chapters in this response.',
+        ],
+        'abstract' => [
+            'key' => 'abstract',
+            'heading' => 'Abstract',
+            'min_words' => $abstractWords,
+            'max_passes' => 2,
+            'instructions' => 'Generate only the Abstract based on the full already-generated study body. Make it concise, formal, and academically polished. Do not generate any chapter in this response.',
+        ],
+    ];
+}
+
+function syiAiEnsureSectionHeading(string $markdown, string $heading): string
+{
+    $markdown = trim($markdown);
+    if ($markdown === '') {
+        return '## ' . $heading;
+    }
+
+    if (preg_match('/^\s*(#{1,6}\s*)?' . preg_quote($heading, '/') . '\b/im', $markdown) === 1) {
+        return $markdown;
+    }
+
+    return '## ' . $heading . "\n\n" . $markdown;
+}
+
+function syiAiStripSectionHeading(string $markdown, string $heading): string
+{
+    $markdown = trim($markdown);
+
+    return trim((string) preg_replace(
+        '/^\s*(#{1,6}\s*)?' . preg_quote($heading, '/') . '\s*\n+/i',
+        '',
+        $markdown,
+        1
+    ));
+}
+
+function syiAiBuildSectionUserPrompt(
+    array $job,
+    array $sectionSpec,
+    string $contextMarkdown = '',
+    string $currentMarkdown = '',
+    int $remainingWords = 0,
+    bool $continuation = false
+): string {
+    $basePack = syiAiBuildGenerationUserPrompt($job);
+    $segments = [
+        'Base project pack for this generation:',
+        $basePack,
+    ];
+
+    if (trim($contextMarkdown) !== '') {
+        $segments[] = 'Previously generated study context for consistency:';
+        $segments[] = syiAiPromptExcerpt($contextMarkdown, 8000);
+    }
+
+    if ($continuation) {
+        $segments[] = 'Current section draft to continue from:';
+        $segments[] = syiAiPromptExcerpt($currentMarkdown, 8000);
+        $segments[] = 'Continue and expand only ' . $sectionSpec['heading'] . '. Do not restart the section. Do not repeat material already written. Preserve proper numbering, graph-caption rules, and interpretation minimums. Add substantial new analysis, tables, interpretations, discussion, qualitative treatment, or recommendations as appropriate until at least ' . $remainingWords . ' additional words have been added. Keep the heading structure academically consistent and return only Markdown for the continuation.';
+    } else {
+        $segments[] = 'Generate only this section now: ' . $sectionSpec['heading'] . '.';
+        $segments[] = $sectionSpec['instructions'];
+        $segments[] = 'Minimum target length for this section: ' . $sectionSpec['min_words'] . ' words.';
+        $segments[] = 'Start with the heading "' . $sectionSpec['heading'] . '". Return only clean Markdown for this section.';
+    }
+
+    return implode("\n\n", $segments);
+}
+
+function syiAiGenerateTargetedSection(Client $client, array $job, string $systemPrompt, array $sectionSpec, string $contextMarkdown = ''): array
+{
+    $sectionMarkdown = '';
+    $promptLog = [];
+    $modelsUsed = [];
+    $maxPasses = max(1, (int) ($sectionSpec['max_passes'] ?? 3));
+    $minimumWords = max(250, (int) ($sectionSpec['min_words'] ?? 1200));
+    $completionThreshold = max(220, (int) round($minimumWords * 0.08));
+
+    for ($pass = 1; $pass <= $maxPasses; $pass++) {
+        $currentWords = syiAiCountWords($sectionMarkdown);
+        $remainingWords = max(0, $minimumWords - $currentWords);
+
+        if ($pass > 1 && $remainingWords <= $completionThreshold) {
+            break;
+        }
+
+        $continuation = $pass > 1;
+        $userPrompt = syiAiBuildSectionUserPrompt(
+            $job,
+            $sectionSpec,
+            $contextMarkdown,
+            $sectionMarkdown,
+            $remainingWords,
+            $continuation
+        );
+
+        $response = syiAiOpenAiChatRequest($client, [
+            ['role' => 'system', 'content' => $systemPrompt],
+            ['role' => 'user', 'content' => $userPrompt],
+        ], 0.2);
+
+        $chunk = syiAiFinalizeAcademicMarkdown($job, (string) $response['content']);
+        if ($continuation) {
+            $chunk = syiAiStripSectionHeading($chunk, (string) $sectionSpec['heading']);
+        } else {
+            $chunk = syiAiEnsureSectionHeading($chunk, (string) $sectionSpec['heading']);
+        }
+
+        $chunk = trim($chunk);
+        if ($chunk === '') {
+            break;
+        }
+
+        $sectionMarkdown = trim($sectionMarkdown . ($sectionMarkdown !== '' ? "\n\n" : '') . $chunk);
+        $promptLog[] = '[' . strtoupper((string) $sectionSpec['key']) . ' | pass ' . $pass . "]\n" . $userPrompt;
+        $modelsUsed[] = (string) $response['model'];
+
+        if (syiAiCountWords($chunk) < 180 && $pass > 1) {
+            break;
+        }
+    }
+
+    $sectionMarkdown = syiAiEnsureSectionHeading(syiAiFinalizeAcademicMarkdown($job, $sectionMarkdown), (string) $sectionSpec['heading']);
+
+    return [
+        'markdown' => $sectionMarkdown,
+        'prompt_log' => implode("\n\n-----\n\n", $promptLog),
+        'models' => array_values(array_unique(array_filter($modelsUsed))),
+    ];
+}
+
 function syiAiGenerateAcademicMarkdown(Client $client, array $job): array
 {
-    $systemPrompt = syiAiBuildSystemPrompt((int) ($job['target_pages'] ?? 50));
-    $userPrompt = syiAiBuildGenerationUserPrompt($job);
+    $systemPrompt = syiAiBuildSystemPrompt($job);
+    $sectionPlan = syiAiSectionGenerationPlan($job);
+    $sectionResults = [];
+    $promptLog = [];
+    $modelsUsed = [];
+    $bodyContext = '';
 
-    $response = syiAiOpenAiChatRequest($client, [
-        ['role' => 'system', 'content' => $systemPrompt],
-        ['role' => 'user', 'content' => $userPrompt],
-    ], 0.2);
+    foreach (['chapter_four', 'chapter_five', 'chapter_six'] as $sectionKey) {
+        if (!isset($sectionPlan[$sectionKey])) {
+            continue;
+        }
+
+        $result = syiAiGenerateTargetedSection($client, $job, $systemPrompt, $sectionPlan[$sectionKey], $bodyContext);
+        $sectionResults[$sectionKey] = $result['markdown'];
+        if ($result['prompt_log'] !== '') {
+            $promptLog[] = $result['prompt_log'];
+        }
+        $modelsUsed = array_merge($modelsUsed, $result['models']);
+        $bodyContext = trim($bodyContext . ($bodyContext !== '' ? "\n\n" : '') . $result['markdown']);
+    }
+
+    if (isset($sectionPlan['abstract'])) {
+        $result = syiAiGenerateTargetedSection($client, $job, $systemPrompt, $sectionPlan['abstract'], $bodyContext);
+        $sectionResults['abstract'] = $result['markdown'];
+        if ($result['prompt_log'] !== '') {
+            $promptLog[] = $result['prompt_log'];
+        }
+        $modelsUsed = array_merge($modelsUsed, $result['models']);
+    }
+
+    $orderedSections = array_filter([
+        $sectionResults['abstract'] ?? '',
+        $sectionResults['chapter_four'] ?? '',
+        $sectionResults['chapter_five'] ?? '',
+        $sectionResults['chapter_six'] ?? '',
+    ], static fn($value) => trim((string) $value) !== '');
+
+    $combinedMarkdown = syiAiFinalizeAcademicMarkdown($job, implode("\n\n", $orderedSections));
 
     return [
         'system_prompt' => $systemPrompt,
-        'user_prompt' => $userPrompt,
-        'model' => $response['model'],
-        'markdown' => $response['content'],
+        'user_prompt' => implode("\n\n=====\n\n", $promptLog),
+        'model' => implode(', ', array_values(array_unique(array_filter($modelsUsed)))),
+        'markdown' => $combinedMarkdown,
     ];
 }
 
@@ -1343,16 +1832,36 @@ function syiAiDocxSafeText(string $text): string
     return htmlspecialchars($text, ENT_XML1 | ENT_QUOTES, 'UTF-8');
 }
 
+function syiAiIsMajorAcademicHeading(string $text): bool
+{
+    return preg_match('/^(abstract|chapter\s+(four|4|five|5|six|6)\b)/i', trim($text)) === 1;
+}
+
+function syiAiChartFigureCaption(array $chartSpec, ?int $chapterNumber, int $figureIndex): string
+{
+    $title = trim((string) ($chartSpec['title'] ?? ''));
+    $chartType = ucfirst(strtolower((string) ($chartSpec['chart_type'] ?? 'Chart')));
+    $chapterPrefix = $chapterNumber !== null ? $chapterNumber . '.' . $figureIndex : (string) $figureIndex;
+
+    if ($title !== '' && preg_match('/^figure\s+\d+(?:\.\d+)?:/i', $title) === 1) {
+        return $title;
+    }
+
+    if ($title === '') {
+        $title = $chartType . ' Presentation';
+    }
+
+    return 'Figure ' . $chapterPrefix . ': ' . $title;
+}
+
 function syiAiRenderDocx(array $blocks, array $charts, string $outputPath, string $documentTitle): void
 {
     syiAiEnsureZipExtension('creating Word output');
 
     $phpWord = new PhpWord();
+    $phpWord->getDocInfo()->setTitle($documentTitle);
     $phpWord->setDefaultFontName('Times New Roman');
     $phpWord->setDefaultFontSize(12);
-    $phpWord->addTitleStyle(1, ['name' => 'Times New Roman', 'size' => 16, 'bold' => true], ['spaceAfter' => 240]);
-    $phpWord->addTitleStyle(2, ['name' => 'Times New Roman', 'size' => 14, 'bold' => true], ['spaceAfter' => 200]);
-    $phpWord->addTitleStyle(3, ['name' => 'Times New Roman', 'size' => 13, 'bold' => true], ['spaceAfter' => 180]);
     $phpWord->addTableStyle(
         'SyiAcademicTable',
         ['borderSize' => 6, 'borderColor' => '333333', 'cellMargin' => 70],
@@ -1365,18 +1874,40 @@ function syiAiRenderDocx(array $blocks, array $charts, string $outputPath, strin
         'marginLeft' => 1100,
         'marginRight' => 1100,
     ]);
-
-    $section->addTitle(syiAiDocxSafeText($documentTitle), 1);
+    $hasVisibleContent = false;
+    $currentChapterNumber = null;
+    $figureCounters = [];
 
     foreach ($blocks as $index => $block) {
         switch ($block['type']) {
             case 'heading':
                 $level = min(3, (int) $block['level']);
                 $text = (string) $block['text'];
-                if (preg_match('/^(chapter 5|abstract)\b/i', $text)) {
+                if ($hasVisibleContent && preg_match('/^chapter\s+(four|4|five|5|six|6)\b/i', $text) === 1) {
                     $section->addPageBreak();
                 }
-                $section->addTitle(syiAiDocxSafeText($text), $level);
+                $detectedChapter = syiAiExtractChapterNumberFromHeading($text);
+                if ($detectedChapter !== null) {
+                    $currentChapterNumber = $detectedChapter;
+                }
+
+                $fontSize = match ($level) {
+                    1 => 16,
+                    2 => 14,
+                    default => 13,
+                };
+
+                $section->addText(
+                    syiAiDocxSafeText($text),
+                    ['name' => 'Times New Roman', 'size' => $fontSize, 'bold' => true],
+                    [
+                        'spaceAfter' => $level === 1 ? 240 : ($level === 2 ? 200 : 180),
+                        'alignment' => syiAiIsMajorAcademicHeading($text)
+                            ? \PhpOffice\PhpWord\SimpleType\Jc::CENTER
+                            : 'left',
+                    ]
+                );
+                $hasVisibleContent = true;
                 break;
 
             case 'paragraph':
@@ -1385,6 +1916,7 @@ function syiAiRenderDocx(array $blocks, array $charts, string $outputPath, strin
                     ['name' => 'Times New Roman', 'size' => 12],
                     ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::BOTH, 'lineHeight' => 1.5, 'spaceAfter' => 180]
                 );
+                $hasVisibleContent = true;
                 break;
 
             case 'list':
@@ -1396,6 +1928,7 @@ function syiAiRenderDocx(array $blocks, array $charts, string $outputPath, strin
                         $block['ordered'] ? ['listType' => \PhpOffice\PhpWord\Style\ListItem::TYPE_NUMBER] : []
                     );
                 }
+                $hasVisibleContent = true;
                 break;
 
             case 'table':
@@ -1414,12 +1947,21 @@ function syiAiRenderDocx(array $blocks, array $charts, string $outputPath, strin
                     }
                 }
                 $section->addTextBreak(1);
+                $hasVisibleContent = true;
                 break;
 
             case 'code':
                 if (isset($charts[$index])) {
-                    $section->addImage($charts[$index]['path'], ['width' => 520, 'height' => 300]);
+                    $section->addImage($charts[$index]['path'], ['width' => 600, 'height' => 400]);
+                    $chapterForFigure = $currentChapterNumber;
+                    $figureCounters[$chapterForFigure ?? 0] = ($figureCounters[$chapterForFigure ?? 0] ?? 0) + 1;
+                    $section->addText(
+                        syiAiDocxSafeText(syiAiChartFigureCaption($charts[$index]['spec'], $chapterForFigure, $figureCounters[$chapterForFigure ?? 0])),
+                        ['name' => 'Times New Roman', 'size' => 11, 'italic' => true],
+                        ['alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER, 'spaceBefore' => 100, 'spaceAfter' => 140]
+                    );
                     $section->addTextBreak(1);
+                    $hasVisibleContent = true;
                 }
                 break;
         }
@@ -1439,6 +1981,7 @@ function syiAiRenderPdf(array $blocks, array $charts, string $outputPath, string
         'margin_left' => 18,
         'margin_right' => 18,
     ]);
+    $mpdf->SetTitle($documentTitle);
 
     $html = '<style>
         body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.6; }
@@ -1449,18 +1992,34 @@ function syiAiRenderPdf(array $blocks, array $charts, string $outputPath, string
         p { text-align: justify; }
         .chart { margin: 18px 0; text-align: center; }
         .chart img { max-width: 100%; height: auto; }
+        .major-heading { text-align: center; }
+        .figure-caption { text-align: center; font-style: italic; margin-top: 6px; margin-bottom: 14px; }
     </style>';
-    $html .= '<h1>' . htmlspecialchars($documentTitle, ENT_QUOTES, 'UTF-8') . '</h1>';
+    $hasVisibleContent = false;
+    $currentChapterNumber = null;
+    $figureCounters = [];
 
     foreach ($blocks as $index => $block) {
         switch ($block['type']) {
             case 'heading':
                 $level = min(3, (int) $block['level']);
-                $html .= '<h' . $level . '>' . htmlspecialchars((string) $block['text'], ENT_QUOTES, 'UTF-8') . '</h' . $level . '>';
+                $text = (string) $block['text'];
+                if ($hasVisibleContent && preg_match('/^chapter\s+(four|4|five|5|six|6)\b/i', $text) === 1) {
+                    $html .= '<pagebreak />';
+                }
+                $detectedChapter = syiAiExtractChapterNumberFromHeading($text);
+                if ($detectedChapter !== null) {
+                    $currentChapterNumber = $detectedChapter;
+                }
+
+                $class = syiAiIsMajorAcademicHeading($text) ? ' class="major-heading"' : '';
+                $html .= '<h' . $level . $class . '>' . htmlspecialchars($text, ENT_QUOTES, 'UTF-8') . '</h' . $level . '>';
+                $hasVisibleContent = true;
                 break;
 
             case 'paragraph':
                 $html .= '<p>' . nl2br(htmlspecialchars((string) $block['text'], ENT_QUOTES, 'UTF-8')) . '</p>';
+                $hasVisibleContent = true;
                 break;
 
             case 'list':
@@ -1470,6 +2029,7 @@ function syiAiRenderPdf(array $blocks, array $charts, string $outputPath, string
                     $html .= '<li>' . htmlspecialchars((string) $item, ENT_QUOTES, 'UTF-8') . '</li>';
                 }
                 $html .= '</' . $tag . '>';
+                $hasVisibleContent = true;
                 break;
 
             case 'table':
@@ -1486,11 +2046,17 @@ function syiAiRenderPdf(array $blocks, array $charts, string $outputPath, string
                     $html .= '</tr>';
                 }
                 $html .= '</tbody></table>';
+                $hasVisibleContent = true;
                 break;
 
             case 'code':
                 if (isset($charts[$index])) {
+                    $chapterForFigure = $currentChapterNumber;
+                    $figureCounters[$chapterForFigure ?? 0] = ($figureCounters[$chapterForFigure ?? 0] ?? 0) + 1;
+                    $caption = syiAiChartFigureCaption($charts[$index]['spec'], $chapterForFigure, $figureCounters[$chapterForFigure ?? 0]);
                     $html .= '<div class="chart"><img src="' . htmlspecialchars($charts[$index]['path'], ENT_QUOTES, 'UTF-8') . '" alt="Chart"></div>';
+                    $html .= '<div class="figure-caption">' . htmlspecialchars($caption, ENT_QUOTES, 'UTF-8') . '</div>';
+                    $hasVisibleContent = true;
                 }
                 break;
         }
@@ -1515,8 +2081,8 @@ function syiAiRenderChartImage(string $chartDirectory, array $chartSpec, string 
         return null;
     }
 
-    $width = 1200;
-    $height = 700;
+    $width = 1500;
+    $height = 1000;
     $image = imagecreatetruecolor($width, $height);
 
     $white = imagecolorallocate($image, 255, 255, 255);
@@ -1528,7 +2094,9 @@ function syiAiRenderChartImage(string $chartDirectory, array $chartSpec, string 
     $gray = imagecolorallocate($image, 210, 210, 210);
 
     imagefill($image, 0, 0, $white);
-    imagestring($image, 5, 40, 30, 'SYiTech Generated Chart', $black);
+    if (function_exists('imageantialias')) {
+        imageantialias($image, true);
+    }
 
     if ($type === 'pie') {
         syiAiDrawPieChart($image, $labels, $values, [$blue, $green, $red, $orange], $black);
@@ -1545,30 +2113,132 @@ function syiAiRenderChartImage(string $chartDirectory, array $chartSpec, string 
     return $path;
 }
 
+function syiAiChartFontPath(): ?string
+{
+    static $resolved = false;
+    static $fontPath = null;
+
+    if ($resolved) {
+        return $fontPath;
+    }
+
+    $resolved = true;
+    $candidates = array_filter([
+        syiAiEnv('AI_CHART_FONT_PATH'),
+        'C:\\Windows\\Fonts\\arial.ttf',
+        'C:\\Windows\\Fonts\\calibri.ttf',
+        'C:\\Windows\\Fonts\\tahoma.ttf',
+        'C:\\Windows\\Fonts\\times.ttf',
+    ]);
+
+    foreach ($candidates as $candidate) {
+        if (is_string($candidate) && $candidate !== '' && is_file($candidate)) {
+            $fontPath = $candidate;
+            break;
+        }
+    }
+
+    return $fontPath;
+}
+
+function syiAiChartWriteText($image, string $text, int $x, int $y, int $color, int $fontSize = 14, string $align = 'left', float $angle = 0.0): void
+{
+    $text = trim($text);
+    if ($text === '') {
+        return;
+    }
+
+    $fontPath = syiAiChartFontPath();
+    if ($fontPath !== null && function_exists('imagettfbbox') && function_exists('imagettftext')) {
+        $bbox = imagettfbbox($fontSize, $angle, $fontPath, $text);
+        if (is_array($bbox)) {
+            $minX = min($bbox[0], $bbox[2], $bbox[4], $bbox[6]);
+            $maxX = max($bbox[0], $bbox[2], $bbox[4], $bbox[6]);
+            $textWidth = (int) abs($maxX - $minX);
+
+            if ($align === 'center') {
+                $x -= (int) round($textWidth / 2);
+            } elseif ($align === 'right') {
+                $x -= $textWidth;
+            }
+        }
+
+        imagettftext($image, $fontSize, $angle, $x, $y, $color, $fontPath, $text);
+        return;
+    }
+
+    $font = 5;
+    $textWidth = imagefontwidth($font) * strlen($text);
+
+    if ($align === 'center') {
+        $x -= (int) round($textWidth / 2);
+    } elseif ($align === 'right') {
+        $x -= $textWidth;
+    }
+
+    imagestring($image, $font, $x, max(0, $y - 15), $text, $color);
+}
+
+function syiAiChartWrapLines(string $text, int $maxChars = 18, int $maxLines = 2): array
+{
+    $text = trim((string) (preg_replace('/\s+/', ' ', $text) ?? $text));
+    if ($text === '') {
+        return [];
+    }
+
+    $lines = explode("\n", wordwrap($text, $maxChars, "\n", true));
+    if (count($lines) > $maxLines) {
+        $lines = array_slice($lines, 0, $maxLines);
+        $lastIndex = $maxLines - 1;
+        $lines[$lastIndex] = rtrim(substr($lines[$lastIndex], 0, max(1, $maxChars - 3)), '.') . '...';
+    }
+
+    return $lines;
+}
+
+function syiAiChartWriteWrappedText($image, string $text, int $centerX, int $topY, int $color, int $fontSize = 14, int $maxChars = 18, int $maxLines = 2): void
+{
+    $lineHeight = $fontSize + 6;
+
+    foreach (syiAiChartWrapLines($text, $maxChars, $maxLines) as $index => $line) {
+        syiAiChartWriteText(
+            $image,
+            $line,
+            $centerX,
+            $topY + $fontSize + ($index * $lineHeight),
+            $color,
+            $fontSize,
+            'center'
+        );
+    }
+}
+
 function syiAiDrawBarChart($image, array $labels, array $values, int $barColor, int $textColor, int $gridColor): void
 {
     $width = imagesx($image);
     $height = imagesy($image);
-    $left = 100;
-    $right = $width - 80;
-    $top = 100;
-    $bottom = $height - 120;
+    $left = 150;
+    $right = $width - 110;
+    $top = 140;
+    $bottom = $height - 240;
     $count = max(1, count($values));
     $maxValue = max(array_map(static fn($value) => (float) $value, $values));
     $maxValue = $maxValue > 0 ? $maxValue : 1;
 
+    imagesetthickness($image, 2);
     imageline($image, $left, $top, $left, $bottom, $textColor);
     imageline($image, $left, $bottom, $right, $bottom, $textColor);
+    imagesetthickness($image, 1);
 
     for ($step = 0; $step <= 5; $step++) {
         $y = $bottom - (int) (($bottom - $top) * ($step / 5));
         imageline($image, $left, $y, $right, $y, $gridColor);
-        imagestring($image, 3, 30, $y - 7, (string) round(($maxValue / 5) * $step, 2), $textColor);
+        syiAiChartWriteText($image, (string) round(($maxValue / 5) * $step, 2), $left - 20, $y + 6, $textColor, 16, 'right');
     }
 
     $chartWidth = $right - $left;
     $slot = (int) ($chartWidth / $count);
-    $barWidth = max(20, (int) ($slot * 0.55));
+    $barWidth = max(28, (int) ($slot * 0.58));
 
     foreach ($values as $index => $value) {
         $numericValue = (float) $value;
@@ -1577,8 +2247,8 @@ function syiAiDrawBarChart($image, array $labels, array $values, int $barColor, 
         $barHeight = (int) (($numericValue / $maxValue) * ($bottom - $top - 10));
         $y1 = $bottom - $barHeight;
         imagefilledrectangle($image, $x1, $y1, $x2, $bottom - 1, $barColor);
-        imagestring($image, 3, $x1, $y1 - 18, (string) round($numericValue, 2), $textColor);
-        imagestring($image, 2, $x1, $bottom + 10, substr((string) ($labels[$index] ?? 'Item'), 0, 12), $textColor);
+        syiAiChartWriteText($image, (string) round($numericValue, 2), (int) (($x1 + $x2) / 2), max($top + 18, $y1 - 12), $textColor, 15, 'center');
+        syiAiChartWriteWrappedText($image, (string) ($labels[$index] ?? 'Item'), (int) (($x1 + $x2) / 2), $bottom + 20, $textColor, 14, 16, 3);
     }
 }
 
@@ -1586,21 +2256,23 @@ function syiAiDrawLineChart($image, array $labels, array $values, int $lineColor
 {
     $width = imagesx($image);
     $height = imagesy($image);
-    $left = 100;
-    $right = $width - 80;
-    $top = 100;
-    $bottom = $height - 120;
+    $left = 150;
+    $right = $width - 110;
+    $top = 140;
+    $bottom = $height - 240;
     $count = max(2, count($values));
     $maxValue = max(array_map(static fn($value) => (float) $value, $values));
     $maxValue = $maxValue > 0 ? $maxValue : 1;
 
+    imagesetthickness($image, 2);
     imageline($image, $left, $top, $left, $bottom, $textColor);
     imageline($image, $left, $bottom, $right, $bottom, $textColor);
+    imagesetthickness($image, 1);
 
     for ($step = 0; $step <= 5; $step++) {
         $y = $bottom - (int) (($bottom - $top) * ($step / 5));
         imageline($image, $left, $y, $right, $y, $gridColor);
-        imagestring($image, 3, 30, $y - 7, (string) round(($maxValue / 5) * $step, 2), $textColor);
+        syiAiChartWriteText($image, (string) round(($maxValue / 5) * $step, 2), $left - 20, $y + 6, $textColor, 16, 'right');
     }
 
     $chartWidth = $right - $left;
@@ -1615,9 +2287,9 @@ function syiAiDrawLineChart($image, array $labels, array $values, int $lineColor
             imageline($image, $previousPoint['x'], $previousPoint['y'], $x, $y, $lineColor);
         }
 
-        imagefilledellipse($image, $x, $y, 12, 12, $lineColor);
-        imagestring($image, 2, $x - 20, $bottom + 10, substr((string) ($labels[$index] ?? 'Item'), 0, 12), $textColor);
-        imagestring($image, 3, $x - 10, $y - 20, (string) round($numericValue, 2), $textColor);
+        imagefilledellipse($image, $x, $y, 18, 18, $lineColor);
+        syiAiChartWriteWrappedText($image, (string) ($labels[$index] ?? 'Item'), $x, $bottom + 20, $textColor, 14, 16, 3);
+        syiAiChartWriteText($image, (string) round($numericValue, 2), $x, max($top + 18, $y - 18), $textColor, 15, 'center');
         $previousPoint = ['x' => $x, 'y' => $y];
     }
 }
@@ -1626,9 +2298,9 @@ function syiAiDrawPieChart($image, array $labels, array $values, array $palette,
 {
     $width = imagesx($image);
     $height = imagesy($image);
-    $centerX = (int) ($width * 0.35);
-    $centerY = (int) ($height * 0.5);
-    $diameter = 360;
+    $centerX = (int) ($width * 0.34);
+    $centerY = (int) ($height * 0.53);
+    $diameter = 460;
     $total = array_sum(array_map(static fn($value) => (float) $value, $values));
     $total = $total > 0 ? $total : 1;
     $startAngle = 0.0;
@@ -1651,15 +2323,24 @@ function syiAiDrawPieChart($image, array $labels, array $values, array $palette,
     }
 
     $legendX = (int) ($width * 0.68);
-    $legendY = 140;
+    $legendY = 180;
 
     foreach ($labels as $index => $label) {
         $color = $palette[$index % count($palette)];
-        imagefilledrectangle($image, $legendX, $legendY, $legendX + 25, $legendY + 18, $color);
+        imagefilledrectangle($image, $legendX, $legendY, $legendX + 30, $legendY + 22, $color);
         $value = (float) ($values[$index] ?? 0);
         $percentage = round(($value / $total) * 100, 2);
-        imagestring($image, 3, $legendX + 35, $legendY + 3, substr((string) $label, 0, 20) . ' (' . $percentage . '%)', $textColor);
-        $legendY += 30;
+        syiAiChartWriteWrappedText(
+            $image,
+            (string) $label . ' (' . $percentage . '%)',
+            $legendX + 170,
+            $legendY - 6,
+            $textColor,
+            15,
+            24,
+            2
+        );
+        $legendY += 62;
     }
 }
 

@@ -74,6 +74,8 @@ $payments = $stmt->fetchAll();
                                 $status_class = [
                                     'pending' => 'warning',
                                     'paid' => 'success',
+                                    'completed' => 'success',
+                                    'success' => 'success',
                                     'failed' => 'danger'
                                 ];
                                 $class = $status_class[$payment['status']] ?? 'secondary';

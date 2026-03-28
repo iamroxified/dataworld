@@ -45,7 +45,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $errorMessage === '') {
 
         if (isset($_POST['save_settings'])) {
             $degreeLevel = (string) ($_POST['degree_level'] ?? 'BSc/HND');
-            $targetPages = (int) ($_POST['target_pages'] ?? 50);
+            $recommendedPages = syiAiRecommendedPagesForDegree($degreeLevel);
+            $targetPages = (int) ($_POST['target_pages'] ?? $recommendedPages);
+            if (!in_array($targetPages, [30, 50, 70, 100], true)) {
+                $targetPages = $recommendedPages;
+            }
             $includeGraphs = ($_POST['include_graphs'] ?? '1') === '1' ? 1 : 0;
             $hypothesisMode = ($_POST['hypothesis_mode'] ?? 'auto-detect') === 'yes' ? 'yes' : 'auto-detect';
             $outputFormat = ($_POST['output_format'] ?? 'word') === 'pdf' ? 'pdf' : 'word';
@@ -107,6 +111,12 @@ try {
 $datasetSummary = $selectedJob && !empty($selectedJob['dataset_summary_json'])
     ? json_decode((string) $selectedJob['dataset_summary_json'], true)
     : null;
+$selectedDegreeLevel = $selectedJob && isset($selectedJob['degree_level'])
+    ? (string) $selectedJob['degree_level']
+    : 'BSc/HND';
+$selectedTargetPages = $selectedJob && isset($selectedJob['target_pages'])
+    ? (int) $selectedJob['target_pages']
+    : syiAiRecommendedPagesForDegree($selectedDegreeLevel);
 
 $jobCounts = [
     'uploaded' => 0,
@@ -357,7 +367,7 @@ function syiAiRequestIdFromJobUuid(string $jobUuid): ?int
                         <label for="degree_level" class="form-label">Degree Level</label>
                         <select class="form-control" id="degree_level" name="degree_level" required>
                           <?php foreach (['NCE/ND', 'BSc/HND', 'PGD', 'MSc/MPhil', 'PhD'] as $option): ?>
-                            <option value="<?php echo htmlspecialchars($option, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $selectedJob['degree_level'] === $option ? 'selected' : ''; ?>>
+                            <option value="<?php echo htmlspecialchars($option, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $selectedDegreeLevel === $option ? 'selected' : ''; ?>>
                               <?php echo htmlspecialchars($option); ?>
                             </option>
                           <?php endforeach; ?>
@@ -367,12 +377,13 @@ function syiAiRequestIdFromJobUuid(string $jobUuid): ?int
                       <div class="form-group mb-3">
                         <label for="target_pages" class="form-label">Pages</label>
                         <select class="form-control" id="target_pages" name="target_pages" required>
-                          <?php foreach ([30, 50, 100] as $pageCount): ?>
-                            <option value="<?php echo $pageCount; ?>" <?php echo (int) $selectedJob['target_pages'] === $pageCount ? 'selected' : ''; ?>>
+                          <?php foreach ([30, 50, 70, 100] as $pageCount): ?>
+                            <option value="<?php echo $pageCount; ?>" <?php echo $selectedTargetPages === $pageCount ? 'selected' : ''; ?>>
                               <?php echo $pageCount; ?>
                             </option>
                           <?php endforeach; ?>
                         </select>
+                        <small class="text-muted d-block mt-2">Recommended pages by degree: BSc/HND 30, MSc/MPhil 70, PhD 100.</small>
                       </div>
 
                       <div class="form-group mb-3">

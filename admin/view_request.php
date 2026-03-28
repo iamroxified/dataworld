@@ -48,6 +48,17 @@ function adminAutomationBadge(string $status): string
     };
 }
 
+function adminPaymentBadge(?string $status): string
+{
+    return match (strtolower(trim((string) $status))) {
+        'completed', 'paid', 'success' => 'success',
+        'failed', 'cancelled', 'rejected' => 'danger',
+        'processing' => 'info',
+        'pending' => 'warning',
+        default => 'secondary',
+    };
+}
+
 function adminAutomationJobUuid(int $requestId): string
 {
     return 'analytics-request-' . $requestId;
@@ -76,6 +87,34 @@ function adminFetchAutomationJob(PDO $pdo, int $requestId): ?array
     return $row ?: null;
 }
 
+function adminCreateManualPaymentRecord(PDO $pdo, array $request): void
+{
+    $existingPayment = $pdo->prepare("SELECT COUNT(*) FROM payments WHERE order_id = ? AND status IN ('paid', 'success', 'completed')");
+    $existingPayment->execute([(int) ($request['order_id'] ?? 0)]);
+
+    if ((int) $existingPayment->fetchColumn() > 0) {
+        return;
+    }
+
+    $referenceBase = preg_replace('/[^A-Za-z0-9]+/', '', (string) ($request['order_number'] ?? ''));
+    if ($referenceBase === '') {
+        $referenceBase = 'ORDER' . (int) ($request['order_id'] ?? 0);
+    }
+
+    $reference = 'MANUAL-' . strtoupper($referenceBase) . '-' . date('YmdHis');
+    $insert = $pdo->prepare(
+        'INSERT INTO payments (user_id, order_id, reference, amount, currency, status) VALUES (?, ?, ?, ?, ?, ?)'
+    );
+    $insert->execute([
+        (int) ($request['user_id'] ?? 0),
+        (int) ($request['order_id'] ?? 0),
+        $reference,
+        (float) ($request['payment_amount'] ?? 0),
+        (string) ($request['currency'] ?? 'NGN'),
+        'completed',
+    ]);
+}
+
 function adminPrepareAutomationPayload(array $request, string $projectRoot): array
 {
     $chaptersText = null;
@@ -84,6 +123,7 @@ function adminPrepareAutomationPayload(array $request, string $projectRoot): arr
     $datasetOriginalName = null;
     $datasetPath = null;
     $chapterOutlineMarkdown = null;
+    $questionnaireText = null;
 
     $chaptersPath = $request['chapter3_file'] ?? null;
     $chaptersAbsolutePath = syiAiAbsolutePath($projectRoot, $chaptersPath);
@@ -95,13 +135,24 @@ function adminPrepareAutomationPayload(array $request, string $projectRoot): arr
 
     $questionairePath = $request['questionaire'] ?? null;
     $questionaireAbsolutePath = syiAiAbsolutePath($projectRoot, $questionairePath);
-    if ($questionaireAbsolutePath && is_file($questionaireAbsolutePath) && syiAiIsDatasetFile($questionairePath)) {
-        $datasetPath = $questionairePath;
-        $datasetOriginalName = basename((string) $questionairePath);
-        $datasetSummaryJson = json_encode(
-            syiAiSummarizeDataset($questionaireAbsolutePath),
-            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-        );
+    if ($questionaireAbsolutePath && is_file($questionaireAbsolutePath)) {
+        if (syiAiIsDatasetFile($questionairePath)) {
+            $datasetPath = $questionairePath;
+            $datasetOriginalName = basename((string) $questionairePath);
+            $datasetSummaryJson = json_encode(
+                syiAiSummarizeDataset($questionaireAbsolutePath),
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+        } elseif (in_array(strtolower((string) pathinfo((string) $questionairePath, PATHINFO_EXTENSION)), ['pdf', 'docx', 'doc', 'txt'], true)) {
+            $questionnaireText = syiAiExtractDocumentText($questionaireAbsolutePath);
+        }
+    }
+
+    if ($questionnaireText !== null && trim($questionnaireText) !== '') {
+        $chaptersText = trim(implode("\n\n", array_filter([
+            $chaptersText,
+            "Questionnaire / Research Instrument\n" . $questionnaireText,
+        ], static fn($value) => trim((string) $value) !== '')));
     }
 
     $submissionMode = ($chaptersText !== null || $datasetSummaryJson !== null) ? 'full_upload' : 'topic_only';
@@ -129,6 +180,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $request = adminFetchRequest($pdo, $requestId);
         if (!$request) {
             throw new RuntimeException('Analytics request not found.');
+        }
+
+        if (isset($_POST['update_payment_status'])) {
+            if (!syiAiValidateCsrf($_POST['csrf_token'] ?? null)) {
+                throw new RuntimeException('Invalid payment status form token. Please refresh and try again.');
+            }
+
+            $newPaymentStatus = strtolower(trim((string) ($_POST['payment_status'] ?? '')));
+            if (!in_array($newPaymentStatus, ['pending', 'completed', 'failed'], true)) {
+                throw new RuntimeException('Invalid payment status selected.');
+            }
+
+            $orderId = (int) ($request['order_id'] ?? 0);
+            if ($orderId <= 0) {
+                throw new RuntimeException('This analytics request is not linked to a valid order.');
+            }
+
+            $orderStmt = $pdo->prepare('SELECT status, payment_status FROM orders WHERE id = ? LIMIT 1');
+            $orderStmt->execute([$orderId]);
+            $orderRow = $orderStmt->fetch();
+
+            if (!$orderRow) {
+                throw new RuntimeException('Order record not found for this analytics request.');
+            }
+
+            $currentOrderStatus = (string) ($orderRow['status'] ?? 'pending');
+            $currentPaymentStatus = strtolower((string) ($orderRow['payment_status'] ?? 'pending'));
+            $updatedOrderStatus = $currentOrderStatus;
+
+            if ($newPaymentStatus === 'completed' && in_array($currentOrderStatus, ['pending', 'failed', 'cancelled', 'rejected'], true)) {
+                $updatedOrderStatus = 'processing';
+            }
+
+            $pdo->beginTransaction();
+
+            $updatePayment = $pdo->prepare('UPDATE orders SET payment_status = ?, status = ? WHERE id = ?');
+            $updatePayment->execute([$newPaymentStatus, $updatedOrderStatus, $orderId]);
+
+            if ($newPaymentStatus === 'completed' && $currentPaymentStatus !== 'completed') {
+                adminCreateManualPaymentRecord($pdo, $request);
+            }
+
+            $pdo->commit();
+
+            $_SESSION['message'] = $newPaymentStatus === 'completed'
+                ? 'Payment status updated to completed. The request is now cleared for processing and automation.'
+                : 'Payment status updated successfully.';
+            $_SESSION['message_type'] = 'success';
+
+            header("Location: view_request.php?id={$requestId}");
+            exit;
         }
 
         if (isset($_POST['update_status'])) {
@@ -188,7 +290,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $payload = adminPrepareAutomationPayload($request, $projectRoot);
 
             $degreeLevel = (string) ($_POST['degree_level'] ?? 'BSc/HND');
-            $targetPages = (int) ($_POST['target_pages'] ?? 50);
+            $recommendedPages = syiAiRecommendedPagesForDegree($degreeLevel);
+            $targetPages = (int) ($_POST['target_pages'] ?? $recommendedPages);
+            if (!in_array($targetPages, [30, 50, 70, 100], true)) {
+                $targetPages = $recommendedPages;
+            }
             $includeGraphs = ($_POST['include_graphs'] ?? '1') === '1' ? 1 : 0;
             $hypothesisMode = ($_POST['hypothesis_mode'] ?? 'auto-detect') === 'yes' ? 'yes' : 'auto-detect';
             $outputFormat = ($_POST['output_format'] ?? 'word') === 'pdf' ? 'pdf' : 'word';
@@ -283,6 +389,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             exit;
         }
     } catch (Throwable $throwable) {
+        if ($pdo instanceof PDO && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         $message = $throwable->getMessage();
         $messageType = 'danger';
     }
@@ -295,6 +404,12 @@ if (!$request) {
 }
 
 $automationJob = adminFetchAutomationJob($pdo, $requestId);
+$selectedDegreeLevel = $automationJob && isset($automationJob['degree_level'])
+    ? (string) $automationJob['degree_level']
+    : 'BSc/HND';
+$selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
+    ? (int) $automationJob['target_pages']
+    : syiAiRecommendedPagesForDegree($selectedDegreeLevel);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -364,7 +479,7 @@ $automationJob = adminFetchAutomationJob($pdo, $requestId);
                     </div>
                     <div class="col-md-6">
                       <p><strong>Amount:</strong> <?php echo $request['currency']; ?><?php echo number_format((float) $request['payment_amount'], 2); ?></p>
-                      <p><strong>Payment Status:</strong> <span class="badge bg-<?php echo $request['payment_status'] === 'completed' ? 'success' : 'warning'; ?>"><?php echo ucfirst($request['payment_status']); ?></span></p>
+                      <p><strong>Payment Status:</strong> <span class="badge bg-<?php echo adminPaymentBadge($request['payment_status'] ?? null); ?>"><?php echo ucfirst((string) ($request['payment_status'] ?? 'pending')); ?></span></p>
                       <p><strong>Delivery Status:</strong> <span class="badge bg-<?php echo ($request['status'] ?? '') === 'completed' ? 'success' : (($request['status'] ?? '') === 'processing' ? 'info' : 'warning'); ?>"><?php echo ucfirst($request['status'] ?? 'pending'); ?></span></p>
                       <p><strong>Project Completion Status:</strong> <span class="badge bg-<?php echo $request['order_status'] === 'completed' ? 'success' : ($request['order_status'] === 'processing' ? 'info' : ($request['order_status'] === 'cancelled' ? 'danger' : 'warning')); ?>"><?php echo ucfirst($request['order_status']); ?></span></p>
                       <p><strong>Date:</strong> <?php echo date('M d, Y', strtotime($request['created_at'])); ?></p>
@@ -393,6 +508,29 @@ $automationJob = adminFetchAutomationJob($pdo, $requestId);
             </div>
 
             <div class="col-md-4">
+              <div class="card mb-4">
+                <div class="card-header">
+                  <h4 class="card-title">Payment Confirmation</h4>
+                </div>
+                <div class="card-body">
+                  <form method="post" action="">
+                    <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(syiAiCsrfToken(), ENT_QUOTES, 'UTF-8'); ?>">
+                    <div class="form-group">
+                      <label for="payment_status">Update Payment Status</label>
+                      <select name="payment_status" id="payment_status" class="form-control">
+                        <option value="pending" <?php echo (($request['payment_status'] ?? 'pending') === 'pending') ? 'selected' : ''; ?>>Pending</option>
+                        <option value="completed" <?php echo (($request['payment_status'] ?? '') === 'completed') ? 'selected' : ''; ?>>Completed</option>
+                        <option value="failed" <?php echo (($request['payment_status'] ?? '') === 'failed') ? 'selected' : ''; ?>>Failed</option>
+                      </select>
+                    </div>
+                    <small class="text-muted d-block mb-3">
+                      Setting payment to completed will mirror a successful payment verification and move the order to processing when it is still awaiting payment confirmation.
+                    </small>
+                    <button type="submit" name="update_payment_status" class="btn btn-success">Save Payment Status</button>
+                  </form>
+                </div>
+              </div>
+
               <div class="card mb-4">
                 <div class="card-header">
                   <h4 class="card-title">Update Status</h4>
@@ -471,7 +609,7 @@ $automationJob = adminFetchAutomationJob($pdo, $requestId);
                       <label class="form-label">Degree Level</label>
                       <select class="form-control" name="degree_level" required>
                         <?php foreach (['NCE/ND', 'BSc/HND', 'PGD', 'MSc/MPhil', 'PhD'] as $option): ?>
-                          <option value="<?php echo htmlspecialchars($option); ?>" <?php echo (($automationJob['degree_level'] ?? 'BSc/HND') === $option) ? 'selected' : ''; ?>>
+                          <option value="<?php echo htmlspecialchars($option); ?>" <?php echo ($selectedDegreeLevel === $option) ? 'selected' : ''; ?>>
                             <?php echo htmlspecialchars($option); ?>
                           </option>
                         <?php endforeach; ?>
@@ -480,12 +618,13 @@ $automationJob = adminFetchAutomationJob($pdo, $requestId);
                     <div class="form-group mb-3">
                       <label class="form-label">Pages</label>
                       <select class="form-control" name="target_pages" required>
-                        <?php foreach ([30, 50, 100] as $pageCount): ?>
-                          <option value="<?php echo $pageCount; ?>" <?php echo ((int) ($automationJob['target_pages'] ?? 50) === $pageCount) ? 'selected' : ''; ?>>
+                        <?php foreach ([30, 50, 70, 100] as $pageCount): ?>
+                          <option value="<?php echo $pageCount; ?>" <?php echo ($selectedTargetPages === $pageCount) ? 'selected' : ''; ?>>
                             <?php echo $pageCount; ?>
                           </option>
                         <?php endforeach; ?>
                       </select>
+                      <small class="text-muted d-block mt-2">Recommended pages by degree: BSc/HND 30, MSc/MPhil 70, PhD 100.</small>
                     </div>
                     <div class="form-group mb-3">
                       <label class="form-label">Graphs</label>

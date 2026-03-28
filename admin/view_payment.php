@@ -64,7 +64,7 @@ if (!$payment) {
                     <div class="col-md-6">
                       <h5>Payment Information</h5>
                       <p><strong>Amount:</strong> <?php echo htmlspecialchars($payment['currency']); ?><?php echo number_format($payment['amount'], 2); ?></p>
-                      <p><strong>Status:</strong> <span class="badge bg-<?php echo $payment['status'] === 'paid' ? 'success' : 'warning'; ?>"><?php echo ucfirst($payment['status']); ?></span></p>
+                      <p><strong>Status:</strong> <span class="badge bg-<?php echo in_array(($payment['status'] ?? ''), ['paid', 'completed', 'success'], true) ? 'success' : (($payment['status'] ?? '') === 'failed' ? 'danger' : 'warning'); ?>"><?php echo ucfirst($payment['status']); ?></span></p>
                       <p><strong>Reference:</strong> <?php echo htmlspecialchars($payment['reference']); ?></p>
                       <p><strong>Date:</strong> <?php echo date('M d, Y h:i A', strtotime($payment['created_at'])); ?></p>
                       <p><strong>Order ID:</strong> <?php echo htmlspecialchars($payment['order_id'] ?? 'N/A'); ?></p>

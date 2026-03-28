@@ -6,7 +6,15 @@ CREATE TABLE IF NOT EXISTS binding_requests (
     department VARCHAR(255) NOT NULL,
     color VARCHAR(50) NOT NULL,
     cover_page_path VARCHAR(255) NOT NULL,
+    programe VARCHAR(255) NOT NULL,
+    pages INT NOT NULL,
+    copies INT(11) NOT NULL DEFAULT 1,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    acknowledged_at DATETIME NULL,
+    acknowledged_by INT NULL,
+    admin_note TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_user_id (user_id),
-    INDEX idx_order_id (order_id)
+    INDEX idx_order_id (order_id),
+    INDEX idx_status (status)
 );

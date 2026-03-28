@@ -23,8 +23,33 @@ if (isset($_SESSION['message'])) {
     unset($_SESSION['message_type']);
 }
 
+function userBindingRequestBadge(?string $status): string
+{
+    return match (strtolower(trim((string) $status))) {
+        'acknowledged' => 'success',
+        'processing' => 'info',
+        'completed' => 'primary',
+        'cancelled', 'rejected' => 'danger',
+        default => 'warning',
+    };
+}
+
+function userBindingPaymentBadge(?string $status): string
+{
+    return match (strtolower(trim((string) $status))) {
+        'completed', 'paid', 'success' => 'success',
+        'failed', 'cancelled', 'rejected' => 'danger',
+        'processing' => 'info',
+        default => 'warning',
+    };
+}
+
 // Fetch binding requests
-$binding_query = "SELECT * FROM binding_requests WHERE user_id = ? ORDER BY created_at DESC";
+$binding_query = "SELECT br.*, o.order_number, o.payment_status, o.status AS order_status
+                  FROM binding_requests br
+                  LEFT JOIN orders o ON br.order_id = o.id
+                  WHERE br.user_id = ?
+                  ORDER BY br.created_at DESC";
 $binding_stmt = $pdo->prepare($binding_query);
 $binding_stmt->execute([$user_id]);
 $binding_requests = $binding_stmt->fetchAll();
@@ -92,9 +117,11 @@ $binding_requests = $binding_stmt->fetchAll();
                                             <thead>
                                                 <tr>
                                                     <th>SN</th>
-                                                    <th>Full Name</th>
-                                                    <th>Department</th>
-                                                    <th>Color</th>
+                                                    <th>Order #</th>
+                                                    <th>Programme</th>
+                                                    <th>Copies</th>
+                                                    <th>Payment</th>
+                                                    <th>Acknowledgement</th>
                                                     <th>Date</th>
                                                     <th>Action</th>
                                                 </tr>
@@ -104,9 +131,22 @@ $binding_requests = $binding_stmt->fetchAll();
                                                 foreach ($binding_requests as $request) : ?>
                                                     <tr>
                                                         <td><?php echo $sn++; ?></td>
-                                                        <td><?php echo htmlspecialchars($request['full_name']); ?></td>
-                                                        <td><?php echo htmlspecialchars($request['department']); ?></td>
-                                                        <td style="background-color:<?php echo htmlspecialchars($request['color']); ?>"></td>
+                                                        <td><?php echo htmlspecialchars($request['order_number'] ?? 'N/A'); ?></td>
+                                                        <td>
+                                                            <strong><?php echo htmlspecialchars($request['programe'] ?? 'N/A'); ?></strong>
+                                                            <br><small class="text-muted"><?php echo (int) ($request['pages'] ?? 0); ?> pages</small>
+                                                        </td>
+                                                        <td><?php echo (int) ($request['copies'] ?? 1); ?></td>
+                                                        <td>
+                                                            <span class="badge bg-<?php echo userBindingPaymentBadge($request['payment_status'] ?? null); ?>">
+                                                                <?php echo htmlspecialchars(ucfirst((string) ($request['payment_status'] ?? 'pending'))); ?>
+                                                            </span>
+                                                        </td>
+                                                        <td>
+                                                            <span class="badge bg-<?php echo userBindingRequestBadge($request['status'] ?? null); ?>">
+                                                                <?php echo htmlspecialchars(ucfirst((string) ($request['status'] ?? 'pending'))); ?>
+                                                            </span>
+                                                        </td>
                                                         <td><?php echo date('M d, Y', strtotime($request['created_at'])); ?></td>
                                                         <td>
                                                             <a href="view_bind_request.php?id=<?php echo $request['id']; ?>" class="btn btn-primary btn-sm">View</a>

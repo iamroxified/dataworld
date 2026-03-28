@@ -88,6 +88,8 @@ $orders = $stmt->fetchAll();
                                 $payment_status_class = [
                                     'pending' => 'warning',
                                     'paid' => 'success',
+                                    'completed' => 'success',
+                                    'success' => 'success',
                                     'failed' => 'danger'
                                 ];
                                 $p_class = $payment_status_class[$order['payment_status']] ?? 'secondary';
