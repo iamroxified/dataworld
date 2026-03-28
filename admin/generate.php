@@ -2,7 +2,9 @@
 declare(strict_types=1);
 
 ob_start();
-session_start();
+if (PHP_SAPI !== 'cli' && session_status() !== PHP_SESSION_ACTIVE) {
+    session_start();
+}
 
 require('../db/config.php');
 require('../db/functions.php');
@@ -12,26 +14,61 @@ if (function_exists('set_time_limit')) {
     @set_time_limit(0);
 }
 
-if (!isset($_SESSION['user_id'])) {
-    header('Location:../login.php?redirect=admin/generate.php');
-    exit;
-}
-
-$currentUser = getCurrentUser();
-if ((string) ($currentUser['role'] ?? '') !== 'admin') {
-    header('Location:../login.php?redirect=admin/generate.php');
-    exit;
-}
-
 $projectRoot = dirname(__DIR__);
+$jobUuid = trim((string) ($_GET['job'] ?? $_POST['job_uuid'] ?? ($argv[2] ?? '')));
+$isPollRequest = isset($_GET['poll']) && $_GET['poll'] === '1';
+$requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
+$isAjaxRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+$isWorkerRequest = $requestMethod === 'POST'
+    && (
+        (string) ($_GET['worker'] ?? '') === '1'
+        || (string) ($_POST['worker_start'] ?? '') === '1'
+        || $isAjaxRequest
+    );
+$isCliWorker = PHP_SAPI === 'cli' && (string) ($argv[1] ?? '') === 'worker';
+
+if (!$isCliWorker && !isset($_SESSION['user_id'])) {
+    if ($isPollRequest || $isWorkerRequest) {
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        http_response_code(401);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode([
+            'ok' => false,
+            'message' => 'Your admin session has expired. Please log in again and retry.',
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    header('Location:../login.php?redirect=admin/generate.php');
+    exit;
+}
+
+$currentUser = $isCliWorker ? null : getCurrentUser();
+if (!$isCliWorker && (string) ($currentUser['role'] ?? '') !== 'admin') {
+    if ($isPollRequest || $isWorkerRequest) {
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        http_response_code(403);
+        header('Content-Type: application/json; charset=UTF-8');
+        echo json_encode([
+            'ok' => false,
+            'message' => 'Admin access is required for this request.',
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        exit;
+    }
+
+    header('Location:../login.php?redirect=admin/generate.php');
+    exit;
+}
+
 $errorMessage = '';
 $job = null;
 $downloadUrl = null;
 $backUrl = 'admin_settings.php';
 $backLabel = 'Back to AI Review Queue';
-$jobUuid = trim((string) ($_GET['job'] ?? $_POST['job_uuid'] ?? ''));
-$isPollRequest = isset($_GET['poll']) && $_GET['poll'] === '1';
-$isWorkerRequest = $_SERVER['REQUEST_METHOD'] === 'POST' && (string) ($_POST['worker_start'] ?? '') === '1';
 
 function adminAiIsConnectionGone(Throwable $throwable): bool
 {
@@ -191,6 +228,37 @@ function adminAiPersistFailure(string $jobUuid, string $message): void
     }
 }
 
+function adminAiCanUseExec(): bool
+{
+    if (!function_exists('exec')) {
+        return false;
+    }
+
+    $disabled = array_filter(array_map('trim', explode(',', (string) ini_get('disable_functions'))));
+    return !in_array('exec', $disabled, true);
+}
+
+function adminAiStartDetachedCliWorker(string $jobUuid): bool
+{
+    if (!adminAiCanUseExec()) {
+        return false;
+    }
+
+    $phpBinary = PHP_BINARY !== '' ? PHP_BINARY : 'php';
+    $scriptPath = __FILE__;
+
+    if (DIRECTORY_SEPARATOR === '\\') {
+        $command = 'start /B "" ' . escapeshellarg($phpBinary) . ' ' . escapeshellarg($scriptPath) . ' worker ' . escapeshellarg($jobUuid);
+        @pclose(@popen($command, 'r'));
+        return true;
+    }
+
+    $command = escapeshellarg($phpBinary) . ' ' . escapeshellarg($scriptPath) . ' worker ' . escapeshellarg($jobUuid) . ' > /dev/null 2>&1 &';
+    @exec($command, $output, $resultCode);
+
+    return !isset($resultCode) || (int) $resultCode === 0;
+}
+
 function adminAiProcessJob(string $jobUuid, string $projectRoot): void
 {
     try {
@@ -303,6 +371,11 @@ try {
         throw new RuntimeException('A job reference is required before generation can start.');
     }
 
+    if ($isCliWorker) {
+        adminAiProcessJob($jobUuid, $projectRoot);
+        exit(0);
+    }
+
     if ($isPollRequest) {
         $job = adminAiFetchJob($jobUuid);
         if (!$job) {
@@ -357,11 +430,27 @@ try {
             ]);
         }
 
+        adminAiExecute(
+            'UPDATE student_jobs SET status = ?, error_message = NULL WHERE job_uuid = ?',
+            ['generating', $jobUuid]
+        );
+
+        if (adminAiStartDetachedCliWorker($jobUuid)) {
+            adminAiJsonResponse([
+                'ok' => true,
+                'started' => true,
+                'status' => 'generating',
+                'message' => 'Generation started successfully in the background.',
+                'runner' => 'cli',
+            ], 202);
+        }
+
         adminAiFinishResponseAndContinue([
             'ok' => true,
             'started' => true,
             'status' => 'generating',
             'message' => 'Generation started successfully. This page will keep checking for the result.',
+            'runner' => 'http',
         ], 202);
 
         adminAiProcessJob($jobUuid, $projectRoot);
@@ -533,10 +622,36 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
         const jobUuid = <?php echo json_encode((string) $job['job_uuid']); ?>;
         const csrfToken = <?php echo json_encode(syiAiCsrfToken()); ?>;
         const shouldAutoStart = <?php echo $shouldAutoStart ? 'true' : 'false'; ?>;
+        const endpointUrl = new URL(window.location.href);
         let pollTimer = null;
 
         function refreshPage() {
           window.location.reload();
+        }
+
+        function extractServerMessage(text) {
+          const plain = (text || '')
+            .replace(/<[^>]*>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (plain !== '') {
+            return plain.slice(0, 240);
+          }
+
+          return 'The server returned HTML instead of JSON. Check the latest generate.php deployment and your PHP error log.';
+        }
+
+        async function parseJsonResponse(response) {
+          const text = await response.text();
+          try {
+            return {
+              payload: JSON.parse(text),
+              text
+            };
+          } catch (error) {
+            throw new Error(extractServerMessage(text));
+          }
         }
 
         function beginPolling() {
@@ -546,7 +661,11 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
 
           pollTimer = window.setInterval(async function() {
             try {
-              const response = await fetch('generate.php?job=' + encodeURIComponent(jobUuid) + '&poll=1', {
+              const pollUrl = new URL(endpointUrl.href);
+              pollUrl.searchParams.set('job', jobUuid);
+              pollUrl.searchParams.set('poll', '1');
+
+              const response = await fetch(pollUrl.toString(), {
                 headers: {
                   'X-Requested-With': 'XMLHttpRequest'
                 },
@@ -554,10 +673,12 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
               });
 
               if (!response.ok) {
+                const text = await response.text();
+                console.error('Polling error', extractServerMessage(text));
                 return;
               }
 
-              const payload = await response.json();
+              const { payload } = await parseJsonResponse(response);
               if (!payload || payload.ok !== true) {
                 return;
               }
@@ -575,10 +696,16 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
 
         async function startWorker() {
           try {
-            const response = await fetch('generate.php?job=' + encodeURIComponent(jobUuid), {
+            const workerUrl = new URL(endpointUrl.href);
+            workerUrl.searchParams.set('job', jobUuid);
+            workerUrl.searchParams.set('worker', '1');
+
+            const response = await fetch(workerUrl.toString(), {
               method: 'POST',
+              credentials: 'same-origin',
               headers: {
                 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+                'Accept': 'application/json',
                 'X-Requested-With': 'XMLHttpRequest'
               },
               body: new URLSearchParams({
@@ -588,7 +715,7 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
               }).toString()
             });
 
-            const payload = await response.json();
+            const { payload } = await parseJsonResponse(response);
             if (!response.ok || !payload || payload.ok !== true) {
               throw new Error(payload && payload.message ? payload.message : 'Unable to start generation.');
             }

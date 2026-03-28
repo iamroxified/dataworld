@@ -61,14 +61,16 @@
   <script src="assets/js/plugin/gmaps/gmaps.js"></script>
 
   <!-- Sweet Alert -->
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="assets/js/plugin/sweetalert/sweetalert.min.js"></script>
+
+
 
   <!-- Kaiadmin JS -->
   <script src="assets/js/kaiadmin.min.js"></script>
 
   <!-- Kaiadmin DEMO methods, don't include it in your project! -->
   <script src="assets/js/setting-demo2.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+  <script src="assets/js/plugin/select2/select2.full.min.js"></script>
 
 
     

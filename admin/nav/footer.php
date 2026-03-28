@@ -22,7 +22,7 @@
           </div>
           <div>
             Designed by
-            <a target="_blank" href="https://youdevhub.com.ng/">YOUDEVHUB</a>.
+            <a target="_blank" href="https://youdevhub.org.ng/">YOUDEVHUB</a>.
           </div>
         </div>
       </footer>
@@ -68,7 +68,7 @@
 
   <!-- Kaiadmin DEMO methods, don't include it in your project! -->
   <script src="assets/js/setting-demo2.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/js/select2.min.js"></script>
+  <script src="assets/js/plugin/select2/select2.full.min.js"></script>
 
 
     

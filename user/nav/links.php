@@ -23,7 +23,7 @@
           urls: ["assets/css/fonts.min.css"],
         },
         active: function () {
-          sessionStorage.fonts = true;
+          return true;
         },
       });
     </script>
@@ -36,8 +36,6 @@
     <!-- CSS Just for demo purpose, don't include it in your project -->
     <link rel="stylesheet" href="assets/css/demo.css" />
     <link rel="stylesheet" href="assets/css/tree.css" />
- <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-   <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.0.13/css/select2.min.css" rel="stylesheet">
     
 
 <style>
