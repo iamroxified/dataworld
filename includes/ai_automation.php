@@ -2378,9 +2378,12 @@ function syiAiSendReadyEmail(array $job, string $downloadUrl): bool
             $mailer->Password = (string) syiAiEnv('MAIL_PASSWORD', '');
             $mailer->SMTPAuth = $mailer->Username !== '';
             $mailer->Port = (int) syiAiEnv('MAIL_PORT', '587');
+            $mailer->Timeout = max(5, (int) syiAiEnv('MAIL_TIMEOUT', '30'));
+            $mailer->CharSet = 'UTF-8';
             $encryption = strtolower((string) syiAiEnv('MAIL_ENCRYPTION', 'tls'));
             if ($encryption === 'ssl') {
                 $mailer->SMTPSecure = PHPMailer::ENCRYPTION_SMTPS;
+                $mailer->SMTPAutoTLS = false;
             } elseif ($encryption === 'tls') {
                 $mailer->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             }
