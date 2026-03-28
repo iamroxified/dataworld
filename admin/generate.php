@@ -6,9 +6,9 @@ if (PHP_SAPI !== 'cli' && session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 
-require('../db/config.php');
-require('../db/functions.php');
-require('../includes/ai_automation.php');
+require_once __DIR__ . '/../db/config.php';
+require_once __DIR__ . '/../db/functions.php';
+require_once __DIR__ . '/../includes/ai_automation.php';
 
 if (function_exists('set_time_limit')) {
     @set_time_limit(0);
@@ -228,14 +228,23 @@ function adminAiPersistFailure(string $jobUuid, string $message): void
     }
 }
 
-function adminAiCanUseExec(): bool
+function adminAiFunctionEnabled(string $functionName): bool
 {
-    if (!function_exists('exec')) {
+    if (!function_exists($functionName)) {
         return false;
     }
 
     $disabled = array_filter(array_map('trim', explode(',', (string) ini_get('disable_functions'))));
-    return !in_array('exec', $disabled, true);
+    return !in_array($functionName, $disabled, true);
+}
+
+function adminAiCanUseExec(): bool
+{
+    if (DIRECTORY_SEPARATOR === '\\') {
+        return adminAiFunctionEnabled('popen') || adminAiFunctionEnabled('exec');
+    }
+
+    return adminAiFunctionEnabled('exec') || adminAiFunctionEnabled('popen');
 }
 
 function adminAiStartDetachedCliWorker(string $jobUuid): bool
@@ -248,15 +257,52 @@ function adminAiStartDetachedCliWorker(string $jobUuid): bool
     $scriptPath = __FILE__;
 
     if (DIRECTORY_SEPARATOR === '\\') {
-        $command = 'start /B "" ' . escapeshellarg($phpBinary) . ' ' . escapeshellarg($scriptPath) . ' worker ' . escapeshellarg($jobUuid);
-        @pclose(@popen($command, 'r'));
-        return true;
+        $quote = static function (string $value): string {
+            return '"' . str_replace('"', '""', $value) . '"';
+        };
+
+        $command = 'cmd /c start "" /B '
+            . $quote($phpBinary)
+            . ' '
+            . $quote($scriptPath)
+            . ' worker '
+            . $quote($jobUuid);
+
+        if (adminAiFunctionEnabled('popen')) {
+            $handle = @popen($command, 'r');
+            if ($handle === false) {
+                return false;
+            }
+
+            @pclose($handle);
+            return true;
+        }
+
+        if (adminAiFunctionEnabled('exec')) {
+            @exec($command, $output, $resultCode);
+            return !isset($resultCode) || (int) $resultCode === 0;
+        }
+
+        return false;
     }
 
     $command = escapeshellarg($phpBinary) . ' ' . escapeshellarg($scriptPath) . ' worker ' . escapeshellarg($jobUuid) . ' > /dev/null 2>&1 &';
-    @exec($command, $output, $resultCode);
+    if (adminAiFunctionEnabled('exec')) {
+        @exec($command, $output, $resultCode);
+        return !isset($resultCode) || (int) $resultCode === 0;
+    }
 
-    return !isset($resultCode) || (int) $resultCode === 0;
+    if (adminAiFunctionEnabled('popen')) {
+        $handle = @popen($command, 'r');
+        if ($handle === false) {
+            return false;
+        }
+
+        @pclose($handle);
+        return true;
+    }
+
+    return false;
 }
 
 function adminAiProcessJob(string $jobUuid, string $projectRoot): void
@@ -412,6 +458,7 @@ try {
         }
 
         $jobStatus = (string) ($job['status'] ?? 'uploaded');
+        $forceRestart = (string) ($_POST['force_restart'] ?? '') === '1';
         if (in_array($jobStatus, ['ready', 'reviewed'], true)) {
             adminAiJsonResponse([
                 'ok' => true,
@@ -421,7 +468,7 @@ try {
             ]);
         }
 
-        if ($jobStatus === 'generating') {
+        if ($jobStatus === 'generating' && !$forceRestart) {
             adminAiJsonResponse([
                 'ok' => true,
                 'started' => false,
@@ -581,8 +628,16 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
 
                     <?php if ($jobStatus === 'failed'): ?>
                       <div class="mt-3">
-                        <button type="button" id="retry-generation" class="btn btn-warning">
+                        <button type="button" id="retry-generation" class="btn btn-warning" data-force="0">
                           Retry Generation
+                        </button>
+                      </div>
+                    <?php endif; ?>
+
+                    <?php if ($jobStatus === 'generating'): ?>
+                      <div class="mt-3">
+                        <button type="button" id="retry-generation" class="btn btn-outline-warning" data-force="1">
+                          Restart Generation
                         </button>
                       </div>
                     <?php endif; ?>
@@ -694,7 +749,7 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
           }, 5000);
         }
 
-        async function startWorker() {
+        async function startWorker(forceRestart = false) {
           try {
             const workerUrl = new URL(endpointUrl.href);
             workerUrl.searchParams.set('job', jobUuid);
@@ -711,6 +766,7 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
               body: new URLSearchParams({
                 job_uuid: jobUuid,
                 worker_start: '1',
+                force_restart: forceRestart ? '1' : '0',
                 csrf_token: csrfToken
               }).toString()
             });
@@ -736,7 +792,8 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
         if (retryButton) {
           retryButton.addEventListener('click', function() {
             retryButton.disabled = true;
-            startWorker().finally(function() {
+            const forceRestart = retryButton.dataset.force === '1';
+            startWorker(forceRestart).finally(function() {
               retryButton.disabled = false;
             });
           });
