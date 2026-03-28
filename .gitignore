@@ -1,2 +1,3 @@
-db/config
+db/config.php
+
 .env
