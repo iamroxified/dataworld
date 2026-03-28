@@ -8,6 +8,10 @@ require('../db/config.php');
 require('../db/functions.php');
 require('../includes/ai_automation.php');
 
+if (function_exists('set_time_limit')) {
+    @set_time_limit(0);
+}
+
 if (!isset($_SESSION['user_id'])) {
     header('Location:../login.php?redirect=admin/generate.php');
     exit;
@@ -27,6 +31,89 @@ $backUrl = 'admin_settings.php';
 $backLabel = 'Back to AI Review Queue';
 $jobUuid = trim((string) ($_GET['job'] ?? $_POST['job_uuid'] ?? ''));
 
+function adminAiIsConnectionGone(Throwable $throwable): bool
+{
+    if (!$throwable instanceof PDOException) {
+        return false;
+    }
+
+    $message = strtolower($throwable->getMessage());
+    $driverCode = (string) ($throwable->errorInfo[1] ?? $throwable->getCode() ?? '');
+
+    return in_array($driverCode, ['2006', '2013'], true)
+        || str_contains($message, 'server has gone away')
+        || str_contains($message, 'lost connection')
+        || str_contains($message, 'error while sending query');
+}
+
+function adminAiReconnectPdo(): PDO
+{
+    global $host, $db, $user, $pass, $charset, $options, $pdo;
+
+    $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
+    $pdo = new PDO($dsn, $user, $pass, $options);
+
+    return $pdo;
+}
+
+function adminAiRunWithReconnect(callable $callback, int $maxAttempts = 2)
+{
+    $attempt = 0;
+
+    while ($attempt < $maxAttempts) {
+        $attempt++;
+
+        try {
+            global $pdo;
+            return $callback($pdo);
+        } catch (Throwable $throwable) {
+            if ($attempt >= $maxAttempts || !adminAiIsConnectionGone($throwable)) {
+                throw $throwable;
+            }
+
+            adminAiReconnectPdo();
+        }
+    }
+
+    throw new RuntimeException('Unable to complete the database operation.');
+}
+
+function adminAiFetchJob(string $jobUuid): ?array
+{
+    return adminAiRunWithReconnect(function (PDO $pdo) use ($jobUuid): ?array {
+        $statement = $pdo->prepare('SELECT * FROM student_jobs WHERE job_uuid = ? LIMIT 1');
+        $statement->execute([$jobUuid]);
+        $row = $statement->fetch();
+        return $row ?: null;
+    });
+}
+
+function adminAiExecute(string $sql, array $params = []): void
+{
+    adminAiRunWithReconnect(function (PDO $pdo) use ($sql, $params): void {
+        $statement = $pdo->prepare($sql);
+        $statement->execute($params);
+    });
+}
+
+function adminAiStorageExcerpt(string $text, int $maxBytes, string $notice): string
+{
+    $text = trim($text);
+    if ($text === '' || strlen($text) <= $maxBytes) {
+        return $text;
+    }
+
+    $suffix = "\n\n" . trim($notice);
+    $sliceLength = max(0, $maxBytes - strlen($suffix));
+    if (function_exists('mb_strcut')) {
+        $trimmed = mb_strcut($text, 0, $sliceLength, 'UTF-8');
+    } else {
+        $trimmed = substr($text, 0, $sliceLength);
+    }
+
+    return rtrim((string) $trimmed) . $suffix;
+}
+
 try {
     syiAiLoadDependencies($projectRoot);
 
@@ -34,9 +121,7 @@ try {
         throw new RuntimeException('A job reference is required before generation can start.');
     }
 
-    $statement = $pdo->prepare('SELECT * FROM student_jobs WHERE job_uuid = ? LIMIT 1');
-    $statement->execute([$jobUuid]);
-    $job = $statement->fetch();
+    $job = adminAiFetchJob($jobUuid);
 
     if (!$job) {
         throw new RuntimeException('The selected job could not be found.');
@@ -49,8 +134,10 @@ try {
         $backUrl = 'admin_settings.php?job=' . urlencode((string) $job['job_uuid']);
     }
 
-    $pdo->prepare('UPDATE student_jobs SET status = ?, error_message = NULL WHERE job_uuid = ?')
-        ->execute(['generating', $jobUuid]);
+    adminAiExecute(
+        'UPDATE student_jobs SET status = ?, error_message = NULL WHERE job_uuid = ?',
+        ['generating', $jobUuid]
+    );
 
     $client = syiAiCreateClient();
 
@@ -58,11 +145,12 @@ try {
         $outline = syiAiGenerateTopicOutline($client, $job);
         $methodology = syiAiExtractMethodology($outline);
 
-        $pdo->prepare('UPDATE student_jobs SET chapter_outline_markdown = ?, chapters_text = ?, methodology_text = ? WHERE job_uuid = ?')
-            ->execute([$outline, $outline, $methodology, $jobUuid]);
+        adminAiExecute(
+            'UPDATE student_jobs SET chapter_outline_markdown = ?, chapters_text = ?, methodology_text = ? WHERE job_uuid = ?',
+            [$outline, $outline, $methodology, $jobUuid]
+        );
 
-        $statement->execute([$jobUuid]);
-        $job = $statement->fetch();
+        $job = adminAiFetchJob($jobUuid);
     }
 
     $generation = syiAiGenerateAcademicMarkdown($client, $job);
@@ -87,34 +175,60 @@ try {
         $downloadUrl
     );
 
-    $update = $pdo->prepare(
+    $storedSystemPrompt = adminAiStorageExcerpt(
+        (string) $generation['system_prompt'],
+        32000,
+        '[System prompt truncated for database storage.]'
+    );
+    $storedUserPrompt = adminAiStorageExcerpt(
+        (string) $generation['user_prompt'],
+        120000,
+        '[Prompt log truncated for database storage.]'
+    );
+    $storedMarkdown = adminAiStorageExcerpt(
+        (string) $generation['markdown'],
+        450000,
+        '[Markdown preview truncated for database storage. Full content remains in the generated file.]'
+    );
+
+    adminAiExecute(
         'UPDATE student_jobs
          SET system_prompt = ?, user_prompt = ?, ai_markdown = ?, generated_file_name = ?, generated_file_path = ?,
              download_name = ?, download_expires_at = ?, status = ?, generated_at = NOW(), email_sent_at = ?, error_message = NULL
-         WHERE job_uuid = ?'
+         WHERE job_uuid = ?',
+        [
+            $storedSystemPrompt,
+            $storedUserPrompt,
+            $storedMarkdown,
+            $downloadName,
+            $relativeOutputPath,
+            $downloadName,
+            $expiryDate,
+            'ready',
+            $emailSent ? date('Y-m-d H:i:s') : null,
+            $jobUuid,
+        ]
     );
 
-    $update->execute([
-        $generation['system_prompt'],
-        $generation['user_prompt'],
-        $generation['markdown'],
-        $downloadName,
-        $relativeOutputPath,
-        $downloadName,
-        $expiryDate,
-        'ready',
-        $emailSent ? date('Y-m-d H:i:s') : null,
-        $jobUuid,
-    ]);
-
-    $statement->execute([$jobUuid]);
-    $job = $statement->fetch();
+    $job = adminAiFetchJob($jobUuid);
 } catch (Throwable $throwable) {
     $errorMessage = $throwable->getMessage();
 
     if ($jobUuid !== '') {
-        $fail = $pdo->prepare('UPDATE student_jobs SET status = ?, error_message = ? WHERE job_uuid = ?');
-        $fail->execute(['failed', $errorMessage, $jobUuid]);
+        try {
+            adminAiExecute(
+                'UPDATE student_jobs SET status = ?, error_message = ? WHERE job_uuid = ?',
+                [
+                    'failed',
+                    adminAiStorageExcerpt($errorMessage, 60000, '[Error message truncated for database storage.]'),
+                    $jobUuid,
+                ]
+            );
+            $job = adminAiFetchJob($jobUuid) ?? $job;
+        } catch (Throwable $persistThrowable) {
+            error_log('Unable to persist AI generation failure for job ' . $jobUuid . ': ' . $persistThrowable->getMessage());
+            $errorMessage .= ' A database reconnection is required before the job status can be updated.';
+        }
     }
 }
 ?>
