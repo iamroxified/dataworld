@@ -2,6 +2,9 @@ RewriteEngine On
 
 RewriteCond %{REQUEST_URI} !index\.php
 
+<IfModule LiteSpeed>
+RewriteRule ^admin/generate(?:\.php)?$ - [E=noabort:1,E=noconntimeout:1]
+</IfModule>
 
 #RewriteBase /
 
