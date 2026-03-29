@@ -247,13 +247,60 @@ function adminAiCanUseExec(): bool
     return adminAiFunctionEnabled('exec') || adminAiFunctionEnabled('popen');
 }
 
+function adminAiResolvePhpBinary(): ?string
+{
+    $candidates = [];
+
+    $envBinary = trim((string) getenv('PHP_CLI_BINARY'));
+    if ($envBinary !== '') {
+        $candidates[] = $envBinary;
+    }
+
+    if (defined('PHP_BINARY') && PHP_BINARY !== '') {
+        $candidates[] = PHP_BINARY;
+    }
+
+    if (defined('PHP_BINDIR') && PHP_BINDIR !== '') {
+        $candidates[] = rtrim(PHP_BINDIR, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . (DIRECTORY_SEPARATOR === '\\' ? 'php.exe' : 'php');
+    }
+
+    if (defined('PHP_BINARY') && PHP_BINARY !== '') {
+        $candidates[] = dirname(PHP_BINARY) . DIRECTORY_SEPARATOR . (DIRECTORY_SEPARATOR === '\\' ? 'php.exe' : 'php');
+    }
+
+    foreach (array_unique(array_filter($candidates)) as $candidate) {
+        $candidate = trim((string) $candidate);
+        if ($candidate === '' || !is_file($candidate)) {
+            continue;
+        }
+
+        $basename = strtolower((string) pathinfo($candidate, PATHINFO_BASENAME));
+        if (str_contains($basename, 'httpd')) {
+            continue;
+        }
+
+        if (!str_contains($basename, 'php')) {
+            continue;
+        }
+
+        return $candidate;
+    }
+
+    return null;
+}
+
 function adminAiStartDetachedCliWorker(string $jobUuid): bool
 {
     if (!adminAiCanUseExec()) {
         return false;
     }
 
-    $phpBinary = PHP_BINARY !== '' ? PHP_BINARY : 'php';
+    $phpBinary = adminAiResolvePhpBinary();
+    if ($phpBinary === null) {
+        error_log('AI generation worker could not resolve a PHP CLI binary.');
+        return false;
+    }
+
     $scriptPath = __FILE__;
 
     if (DIRECTORY_SEPARATOR === '\\') {
