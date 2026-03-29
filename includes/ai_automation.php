@@ -918,8 +918,72 @@ function syiAiRetryAttempts(): int
     return max(1, (int) syiAiEnv('OPENAI_MAX_RETRIES', '3'));
 }
 
+function syiAiSanitizeUtf8String(string $value): string
+{
+    $value = str_replace(["\r\n", "\r"], "\n", $value);
+
+    if (function_exists('mb_check_encoding') && !mb_check_encoding($value, 'UTF-8')) {
+        if (function_exists('mb_convert_encoding')) {
+            $converted = @mb_convert_encoding($value, 'UTF-8', 'UTF-8');
+            if (is_string($converted) && $converted !== '') {
+                $value = $converted;
+            }
+        } elseif (function_exists('iconv')) {
+            $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+            if (is_string($converted) && $converted !== '') {
+                $value = $converted;
+            }
+        }
+    }
+
+    if (function_exists('iconv')) {
+        $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
+        if (is_string($converted) && $converted !== '') {
+            $value = $converted;
+        }
+    }
+
+    $value = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/u', ' ', $value) ?? $value;
+    $value = preg_replace("/\n{3,}/", "\n\n", $value) ?? $value;
+
+    return trim($value);
+}
+
+function syiAiSanitizePayload($value)
+{
+    if (is_array($value)) {
+        $sanitized = [];
+        foreach ($value as $key => $item) {
+            $sanitized[$key] = syiAiSanitizePayload($item);
+        }
+        return $sanitized;
+    }
+
+    if (is_string($value)) {
+        return syiAiSanitizeUtf8String($value);
+    }
+
+    return $value;
+}
+
+function syiAiJsonEncodeSafe($value, int $flags = 0): string
+{
+    $json = json_encode($value, $flags);
+    if ($json !== false) {
+        return $json;
+    }
+
+    $json = json_encode(syiAiSanitizePayload($value), $flags);
+    if ($json !== false) {
+        return $json;
+    }
+
+    throw new RuntimeException('Unable to encode the AI prompt package as valid JSON.');
+}
+
 function syiAiOpenAiChatRequest(Client $client, array $messages, float $temperature = 0.2): array
 {
+    $messages = syiAiSanitizePayload($messages);
     $models = syiAiModelCandidates();
     $maxAttempts = syiAiRetryAttempts();
     $lastError = null;
@@ -927,11 +991,17 @@ function syiAiOpenAiChatRequest(Client $client, array $messages, float $temperat
     foreach ($models as $modelIndex => $model) {
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
-                $response = $client->chat()->create([
+                $payload = [
                     'model' => $model,
                     'messages' => $messages,
                     'temperature' => $temperature,
-                ]);
+                ];
+
+                if (json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) === false) {
+                    $payload = syiAiSanitizePayload($payload);
+                }
+
+                $response = $client->chat()->create($payload);
 
                 $content = trim((string) ($response->choices[0]->message->content ?? ''));
                 if ($content === '') {
@@ -1448,7 +1518,7 @@ function syiAiBuildGenerationUserPrompt(array $job): string
 
     return implode("\n\n", [
         'Use the following project pack to produce the final answer.',
-        json_encode($analysisPackage, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        syiAiJsonEncodeSafe($analysisPackage, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         'Graph rule: when graphs are required, output fenced json blocks with chart_type, title, labels and values exactly as instructed.',
         'Document order rule: keep the result in this order whenever relevant: tables, then graphs, then interpretation, then source note.',
     ]);
