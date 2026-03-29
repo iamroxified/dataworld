@@ -15,10 +15,12 @@ if (function_exists('set_time_limit')) {
 }
 
 $projectRoot = dirname(__DIR__);
+syiAiLoadDependencies($projectRoot);
 $jobUuid = trim((string) ($_GET['job'] ?? $_POST['job_uuid'] ?? ($argv[2] ?? '')));
 $isPollRequest = isset($_GET['poll']) && $_GET['poll'] === '1';
 $requestMethod = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $isAjaxRequest = strtolower((string) ($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '')) === 'xmlhttprequest';
+$isInternalWorker = adminAiIsInternalWorkerRequest($jobUuid, $requestMethod);
 $isWorkerRequest = $requestMethod === 'POST'
     && (
         (string) ($_GET['worker'] ?? '') === '1'
@@ -27,7 +29,7 @@ $isWorkerRequest = $requestMethod === 'POST'
     );
 $isCliWorker = PHP_SAPI === 'cli' && (string) ($argv[1] ?? '') === 'worker';
 
-if (!$isCliWorker && !isset($_SESSION['user_id'])) {
+if (!$isCliWorker && !$isInternalWorker && !isset($_SESSION['user_id'])) {
     if ($isPollRequest || $isWorkerRequest) {
         while (ob_get_level() > 0) {
             ob_end_clean();
@@ -45,8 +47,8 @@ if (!$isCliWorker && !isset($_SESSION['user_id'])) {
     exit;
 }
 
-$currentUser = $isCliWorker ? null : getCurrentUser();
-if (!$isCliWorker && (string) ($currentUser['role'] ?? '') !== 'admin') {
+$currentUser = ($isCliWorker || $isInternalWorker) ? null : getCurrentUser();
+if (!$isCliWorker && !$isInternalWorker && (string) ($currentUser['role'] ?? '') !== 'admin') {
     if ($isPollRequest || $isWorkerRequest) {
         while (ob_get_level() > 0) {
             ob_end_clean();
@@ -228,6 +230,51 @@ function adminAiPersistFailure(string $jobUuid, string $message): void
     }
 }
 
+function adminAiWorkerSecret(): string
+{
+    global $host, $db, $user, $pass;
+
+    $configuredSecret = trim((string) syiAiEnv('AI_WORKER_SECRET', ''));
+    if ($configuredSecret !== '') {
+        return $configuredSecret;
+    }
+
+    $fallbackParts = [
+        trim((string) syiAiEnv('OPENAI_API_KEY', '')),
+        (string) $pass,
+        (string) $db,
+        (string) $user,
+        (string) $host,
+        __FILE__,
+    ];
+
+    return hash('sha256', implode('|', $fallbackParts));
+}
+
+function adminAiWorkerSignature(string $jobUuid): string
+{
+    return hash_hmac('sha256', $jobUuid, adminAiWorkerSecret());
+}
+
+function adminAiIsInternalWorkerRequest(string $jobUuid, string $requestMethod): bool
+{
+    if (strtoupper($requestMethod) !== 'POST' || $jobUuid === '') {
+        return false;
+    }
+
+    $isInternal = (string) ($_GET['internal_worker'] ?? $_POST['internal_worker'] ?? '') === '1';
+    if (!$isInternal) {
+        return false;
+    }
+
+    $providedSignature = trim((string) ($_GET['sig'] ?? $_POST['sig'] ?? ''));
+    if ($providedSignature === '') {
+        return false;
+    }
+
+    return hash_equals(adminAiWorkerSignature($jobUuid), $providedSignature);
+}
+
 function adminAiFunctionEnabled(string $functionName): bool
 {
     if (!function_exists($functionName)) {
@@ -287,6 +334,153 @@ function adminAiResolvePhpBinary(): ?string
     }
 
     return null;
+}
+
+function adminAiAppBasePath(): string
+{
+    $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? '/admin/generate.php'));
+    $basePath = dirname(dirname($scriptName));
+
+    if ($basePath === '.' || $basePath === '/' || $basePath === '\\') {
+        return '';
+    }
+
+    return rtrim($basePath, '/');
+}
+
+function adminAiBuildGenerateRouteUrl(string $jobUuid, array $params = []): string
+{
+    $query = array_merge(['job' => $jobUuid], $params);
+    $queryString = http_build_query($query);
+
+    return rtrim(getBaseURL(), '/') . adminAiAppBasePath() . '/admin/generate' . ($queryString !== '' ? '?' . $queryString : '');
+}
+
+function adminAiStartLoopbackHttpWorker(string $jobUuid): bool
+{
+    $url = adminAiBuildGenerateRouteUrl($jobUuid, [
+        'internal_worker' => '1',
+        'sig' => adminAiWorkerSignature($jobUuid),
+    ]);
+
+    $parts = parse_url($url);
+    if (!is_array($parts) || empty($parts['host'])) {
+        return false;
+    }
+
+    $scheme = strtolower((string) ($parts['scheme'] ?? 'http'));
+    $host = (string) $parts['host'];
+    $port = (int) ($parts['port'] ?? ($scheme === 'https' ? 443 : 80));
+    $path = (string) ($parts['path'] ?? '/');
+    if (!empty($parts['query'])) {
+        $path .= '?' . $parts['query'];
+    }
+
+    $body = http_build_query([
+        'job_uuid' => $jobUuid,
+        'internal_worker' => '1',
+    ]);
+
+    if (function_exists('fsockopen')) {
+        $transportHost = ($scheme === 'https' ? 'ssl://' : '') . $host;
+        $socket = @fsockopen($transportHost, $port, $errorNumber, $errorString, 5.0);
+        if ($socket !== false) {
+            stream_set_blocking($socket, false);
+
+            $hostHeader = $host;
+            $isDefaultPort = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
+            if (!$isDefaultPort) {
+                $hostHeader .= ':' . $port;
+            }
+
+            $request = "POST {$path} HTTP/1.1\r\n"
+                . "Host: {$hostHeader}\r\n"
+                . "Content-Type: application/x-www-form-urlencoded\r\n"
+                . "Content-Length: " . strlen($body) . "\r\n"
+                . "Connection: Close\r\n\r\n"
+                . $body;
+
+            @fwrite($socket, $request);
+            @fclose($socket);
+            return true;
+        }
+    }
+
+    if (function_exists('curl_init')) {
+        $curl = curl_init($url);
+        if ($curl === false) {
+            return false;
+        }
+
+        curl_setopt_array($curl, [
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => [
+                'Content-Type: application/x-www-form-urlencoded',
+                'Connection: close',
+            ],
+            CURLOPT_RETURNTRANSFER => false,
+            CURLOPT_HEADER => false,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => 2,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+        ]);
+
+        @curl_exec($curl);
+        $errorCode = curl_errno($curl);
+        curl_close($curl);
+
+        return in_array($errorCode, [0, 28], true);
+    }
+
+    return false;
+}
+
+function adminAiStartAnyBackgroundWorker(string $jobUuid): ?string
+{
+    if (adminAiStartDetachedCliWorker($jobUuid)) {
+        return 'cli';
+    }
+
+    if (adminAiStartLoopbackHttpWorker($jobUuid)) {
+        return 'loopback';
+    }
+
+    return null;
+}
+
+function adminAiGenerationStaleSeconds(): int
+{
+    return max(180, (int) syiAiEnv('AI_WORKER_STALE_SECONDS', '600'));
+}
+
+function adminAiJobLooksStalled(array $job): bool
+{
+    if ((string) ($job['status'] ?? '') !== 'generating') {
+        return false;
+    }
+
+    $updatedAt = trim((string) ($job['updated_at'] ?? ''));
+    if ($updatedAt === '') {
+        return false;
+    }
+
+    $updatedTimestamp = strtotime($updatedAt);
+    if ($updatedTimestamp === false) {
+        return false;
+    }
+
+    return (time() - $updatedTimestamp) >= adminAiGenerationStaleSeconds();
+}
+
+function adminAiTouchJob(string $jobUuid): void
+{
+    adminAiExecute(
+        'UPDATE student_jobs SET updated_at = NOW() WHERE job_uuid = ?',
+        [$jobUuid]
+    );
 }
 
 function adminAiStartDetachedCliWorker(string $jobUuid): bool
@@ -364,6 +558,7 @@ function adminAiProcessJob(string $jobUuid, string $projectRoot): void
             'UPDATE student_jobs SET status = ?, error_message = NULL WHERE job_uuid = ?',
             ['generating', $jobUuid]
         );
+        adminAiTouchJob($jobUuid);
 
         $client = syiAiCreateClient();
 
@@ -375,6 +570,7 @@ function adminAiProcessJob(string $jobUuid, string $projectRoot): void
                 'UPDATE student_jobs SET chapter_outline_markdown = ?, chapters_text = ?, methodology_text = ? WHERE job_uuid = ?',
                 [$outline, $outline, $methodology, $jobUuid]
             );
+            adminAiTouchJob($jobUuid);
 
             $job = adminAiFetchJob($jobUuid);
             if (!$job) {
@@ -382,13 +578,16 @@ function adminAiProcessJob(string $jobUuid, string $projectRoot): void
             }
         }
 
+        adminAiTouchJob($jobUuid);
         $generation = syiAiGenerateAcademicMarkdown($client, $job);
+        adminAiTouchJob($jobUuid);
         $storage = syiAiEnsureStorage($projectRoot);
 
         $downloadName = syiAiIssueDownloadName($job);
         $outputPath = $storage['generated'] . DIRECTORY_SEPARATOR . $downloadName;
         $documentTitle = 'Project Analysis - ' . syiAiTruncate((string) $job['project_topic'], 90);
         syiAiRenderDocument($projectRoot, $generation['markdown'], $outputPath, $documentTitle);
+        adminAiTouchJob($jobUuid);
 
         $relativeOutputPath = syiAiRelativePath($projectRoot, $outputPath);
         $expiryDays = max(1, (int) syiAiEnv('AI_DOWNLOAD_EXPIRY_DAYS', '14'));
@@ -457,17 +656,15 @@ function adminAiStatusBadge(string $status): string
     };
 }
 
-try {
-    syiAiLoadDependencies($projectRoot);
+    try {
+        if ($jobUuid === '') {
+            throw new RuntimeException('A job reference is required before generation can start.');
+        }
 
-    if ($jobUuid === '') {
-        throw new RuntimeException('A job reference is required before generation can start.');
-    }
-
-    if ($isCliWorker) {
-        adminAiProcessJob($jobUuid, $projectRoot);
-        exit(0);
-    }
+        if ($isCliWorker || $isInternalWorker) {
+            adminAiProcessJob($jobUuid, $projectRoot);
+            exit(0);
+        }
 
     if ($isPollRequest) {
         $job = adminAiFetchJob($jobUuid);
@@ -476,6 +673,29 @@ try {
                 'ok' => false,
                 'message' => 'The selected job could not be found.',
             ], 404);
+        }
+
+        if (adminAiJobLooksStalled($job)) {
+            adminAiExecute(
+                'UPDATE student_jobs SET status = ?, error_message = NULL, updated_at = NOW() WHERE job_uuid = ?',
+                ['generating', $jobUuid]
+            );
+
+            $runner = adminAiStartAnyBackgroundWorker($jobUuid);
+            if ($runner === null) {
+                adminAiPersistFailure(
+                    $jobUuid,
+                    'The background AI worker stalled before completion on this server. Please retry generation. If this repeats, set PHP_CLI_BINARY or AI_WORKER_SECRET and confirm loopback requests are allowed.'
+                );
+            }
+
+            $job = adminAiFetchJob($jobUuid);
+            if (!$job) {
+                adminAiJsonResponse([
+                    'ok' => false,
+                    'message' => 'The selected job could not be found after attempting recovery.',
+                ], 404);
+            }
         }
 
         adminAiJsonResponse([
@@ -529,13 +749,14 @@ try {
             ['generating', $jobUuid]
         );
 
-        if (adminAiStartDetachedCliWorker($jobUuid)) {
+        $runner = adminAiStartAnyBackgroundWorker($jobUuid);
+        if ($runner !== null) {
             adminAiJsonResponse([
                 'ok' => true,
                 'started' => true,
                 'status' => 'generating',
                 'message' => 'Generation started successfully in the background.',
-                'runner' => 'cli',
+                'runner' => $runner,
             ], 202);
         }
 
