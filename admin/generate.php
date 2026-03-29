@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+use OpenAI\Client;
+
 ob_start();
 if (PHP_SAPI !== 'cli' && session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
@@ -438,10 +440,23 @@ function adminAiStartLoopbackHttpWorker(string $jobUuid): bool
     return false;
 }
 
-function adminAiStartAnyBackgroundWorker(string $jobUuid): ?string
+function adminAiStartAnyBackgroundWorker(string $jobUuid, string $projectRoot): ?string
 {
     if (adminAiStartDetachedCliWorker($jobUuid)) {
         return 'cli';
+    }
+
+    if (adminAiStepRunnerEnabled()) {
+        $job = adminAiFetchJob($jobUuid);
+        if ($job) {
+            adminAiSaveGenerationState(
+                $projectRoot,
+                $jobUuid,
+                adminAiInitializeStepState($job, syiAiSectionGenerationPlan($job))
+            );
+            adminAiTouchJob($jobUuid);
+            return 'step';
+        }
     }
 
     if (adminAiStartLoopbackHttpWorker($jobUuid)) {
@@ -481,6 +496,476 @@ function adminAiTouchJob(string $jobUuid): void
         'UPDATE student_jobs SET updated_at = NOW() WHERE job_uuid = ?',
         [$jobUuid]
     );
+}
+
+function adminAiStepRunnerEnabled(): bool
+{
+    return syiAiEnv('AI_STEP_RUNNER', '1') !== '0';
+}
+
+function adminAiGenerationStatePaths(string $projectRoot, string $jobUuid): array
+{
+    $storage = syiAiEnsureStorage($projectRoot);
+    $runtimeDir = $storage['runtime'];
+
+    return [
+        'dir' => $runtimeDir,
+        'state' => $runtimeDir . DIRECTORY_SEPARATOR . $jobUuid . '.json',
+        'lock' => $runtimeDir . DIRECTORY_SEPARATOR . $jobUuid . '.lock',
+    ];
+}
+
+function adminAiLoadGenerationState(string $projectRoot, string $jobUuid): ?array
+{
+    $paths = adminAiGenerationStatePaths($projectRoot, $jobUuid);
+    if (!is_file($paths['state'])) {
+        return null;
+    }
+
+    $json = file_get_contents($paths['state']);
+    if ($json === false || trim($json) === '') {
+        return null;
+    }
+
+    $state = json_decode($json, true);
+    return is_array($state) ? $state : null;
+}
+
+function adminAiSaveGenerationState(string $projectRoot, string $jobUuid, array $state): void
+{
+    $paths = adminAiGenerationStatePaths($projectRoot, $jobUuid);
+    $json = json_encode($state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    if ($json === false) {
+        throw new RuntimeException('Unable to serialize AI generation state.');
+    }
+
+    file_put_contents($paths['state'], $json, LOCK_EX);
+}
+
+function adminAiDeleteGenerationState(string $projectRoot, string $jobUuid): void
+{
+    $paths = adminAiGenerationStatePaths($projectRoot, $jobUuid);
+    foreach (['state', 'lock'] as $key) {
+        if (is_file($paths[$key])) {
+            @unlink($paths[$key]);
+        }
+    }
+}
+
+function adminAiAcquireGenerationLock(string $projectRoot, string $jobUuid)
+{
+    $paths = adminAiGenerationStatePaths($projectRoot, $jobUuid);
+    $handle = fopen($paths['lock'], 'c+');
+    if ($handle === false) {
+        return false;
+    }
+
+    if (!flock($handle, LOCK_EX | LOCK_NB)) {
+        fclose($handle);
+        return false;
+    }
+
+    return $handle;
+}
+
+function adminAiReleaseGenerationLock($handle): void
+{
+    if (!is_resource($handle)) {
+        return;
+    }
+
+    flock($handle, LOCK_UN);
+    fclose($handle);
+}
+
+function adminAiSectionOrder(array $sectionPlan): array
+{
+    return array_values(array_filter(
+        ['chapter_four', 'chapter_five', 'chapter_six', 'abstract'],
+        static fn(string $key): bool => isset($sectionPlan[$key])
+    ));
+}
+
+function adminAiOrderedSectionMarkdown(array $sections): array
+{
+    return array_values(array_filter([
+        $sections['abstract'] ?? '',
+        $sections['chapter_four'] ?? '',
+        $sections['chapter_five'] ?? '',
+        $sections['chapter_six'] ?? '',
+    ], static fn($value): bool => trim((string) $value) !== ''));
+}
+
+function adminAiCombinedPreviewMarkdown(array $job, array $sections): string
+{
+    $ordered = adminAiOrderedSectionMarkdown($sections);
+    if ($ordered === []) {
+        return '';
+    }
+
+    return syiAiFinalizeAcademicMarkdown($job, implode("\n\n", $ordered));
+}
+
+function adminAiPersistPreview(string $jobUuid, string $markdown): void
+{
+    $preview = adminAiStorageExcerpt(
+        $markdown,
+        120000,
+        '[Preview truncated while generation is still in progress.]'
+    );
+
+    adminAiExecute(
+        'UPDATE student_jobs SET ai_markdown = ?, updated_at = NOW() WHERE job_uuid = ?',
+        [$preview, $jobUuid]
+    );
+}
+
+function adminAiInitializeStepState(array $job, array $sectionPlan): array
+{
+    $sectionOrder = adminAiSectionOrder($sectionPlan);
+    $sections = [];
+    $sectionPasses = [];
+
+    foreach ($sectionOrder as $sectionKey) {
+        $sections[$sectionKey] = '';
+        $sectionPasses[$sectionKey] = 0;
+    }
+
+    return [
+        'mode' => 'step',
+        'created_at' => date('c'),
+        'updated_at' => date('c'),
+        'current_stage' => ((string) ($job['submission_mode'] ?? '') === 'topic_only' && trim((string) ($job['chapter_outline_markdown'] ?? '')) === '') ? 'prepare_outline' : 'sections',
+        'section_order' => $sectionOrder,
+        'sections' => $sections,
+        'section_passes' => $sectionPasses,
+        'section_index' => 0,
+        'expansion_pass' => 1,
+        'expansion_index' => 0,
+        'prompt_logs' => [],
+        'models_used' => [],
+    ];
+}
+
+function adminAiAppendPromptLog(array &$state, string $label, string $prompt): void
+{
+    $state['prompt_logs'][] = '[' . $label . "]\n" . $prompt;
+    if (count($state['prompt_logs']) > 40) {
+        $state['prompt_logs'] = array_slice($state['prompt_logs'], -40);
+    }
+}
+
+function adminAiStatePromptLog(array $state): string
+{
+    return implode("\n\n=====\n\n", array_values($state['prompt_logs'] ?? []));
+}
+
+function adminAiStateModels(array $state): string
+{
+    return implode(', ', array_values(array_unique(array_filter($state['models_used'] ?? []))));
+}
+
+function adminAiGenerateSingleSectionChunk(
+    Client $client,
+    array $job,
+    string $systemPrompt,
+    array $sectionSpec,
+    string $contextMarkdown,
+    string $currentMarkdown,
+    int $remainingWords,
+    bool $continuation
+): array {
+    $userPrompt = syiAiBuildSectionUserPrompt(
+        $job,
+        $sectionSpec,
+        $contextMarkdown,
+        $currentMarkdown,
+        $remainingWords,
+        $continuation
+    );
+
+    $response = syiAiOpenAiChatRequest($client, [
+        ['role' => 'system', 'content' => $systemPrompt],
+        ['role' => 'user', 'content' => $userPrompt],
+    ], 0.2);
+
+    $chunk = syiAiFinalizeAcademicMarkdown($job, (string) $response['content']);
+    if ($continuation) {
+        $chunk = syiAiStripSectionHeading($chunk, (string) $sectionSpec['heading']);
+        $chunk = syiAiStripMarkdownHeadingLines($chunk);
+    } else {
+        $chunk = syiAiEnsureSectionHeading($chunk, (string) $sectionSpec['heading']);
+    }
+
+    return [
+        'prompt' => $userPrompt,
+        'model' => (string) $response['model'],
+        'chunk' => trim($chunk),
+    ];
+}
+
+function adminAiFinalizeGeneratedJob(string $jobUuid, string $projectRoot, array $job, array $state, string $systemPrompt): void
+{
+    $orderedSections = adminAiOrderedSectionMarkdown($state['sections'] ?? []);
+    $combinedMarkdown = syiAiFinalizeAcademicMarkdown($job, implode("\n\n", $orderedSections));
+    $combinedMarkdown = syiAiEnsureGraphBlocks($job, $combinedMarkdown);
+    $combinedMarkdown = syiAiFinalizeAcademicMarkdown($job, $combinedMarkdown);
+
+    $storage = syiAiEnsureStorage($projectRoot);
+    $downloadName = syiAiIssueDownloadName($job);
+    $outputPath = $storage['generated'] . DIRECTORY_SEPARATOR . $downloadName;
+    $documentTitle = 'Project Analysis - ' . syiAiTruncate((string) $job['project_topic'], 90);
+    syiAiRenderDocument($projectRoot, $combinedMarkdown, $outputPath, $documentTitle);
+    adminAiTouchJob($jobUuid);
+
+    $relativeOutputPath = syiAiRelativePath($projectRoot, $outputPath);
+    $expiryDays = max(1, (int) syiAiEnv('AI_DOWNLOAD_EXPIRY_DAYS', '14'));
+    $expiryDate = (new DateTimeImmutable('now'))->modify('+' . $expiryDays . ' days')->format('Y-m-d H:i:s');
+    $downloadUrl = syiAiDownloadUrl(getBaseURL(), $downloadName);
+
+    $emailSent = syiAiSendReadyEmail(
+        [
+            'student_name' => $job['student_name'],
+            'student_email' => $job['student_email'],
+            'project_topic' => $job['project_topic'],
+        ],
+        $downloadUrl
+    );
+
+    adminAiExecute(
+        'UPDATE student_jobs
+         SET system_prompt = ?, user_prompt = ?, ai_markdown = ?, generated_file_name = ?, generated_file_path = ?,
+             download_name = ?, download_expires_at = ?, status = ?, generated_at = NOW(), email_sent_at = ?, error_message = NULL
+         WHERE job_uuid = ?',
+        [
+            adminAiStorageExcerpt($systemPrompt, 32000, '[System prompt truncated for database storage.]'),
+            adminAiStorageExcerpt(adminAiStatePromptLog($state), 120000, '[Prompt log truncated for database storage.]'),
+            adminAiStorageExcerpt($combinedMarkdown, 450000, '[Markdown preview truncated for database storage. Full content remains in the generated file.]'),
+            $downloadName,
+            $relativeOutputPath,
+            $downloadName,
+            $expiryDate,
+            'ready',
+            $emailSent ? date('Y-m-d H:i:s') : null,
+            $jobUuid,
+        ]
+    );
+
+    adminAiDeleteGenerationState($projectRoot, $jobUuid);
+}
+
+function adminAiAdvanceStepGeneration(string $jobUuid, string $projectRoot): void
+{
+    $lockHandle = adminAiAcquireGenerationLock($projectRoot, $jobUuid);
+    if ($lockHandle === false) {
+        return;
+    }
+
+    try {
+        $job = adminAiFetchJob($jobUuid);
+        if (!$job) {
+            throw new RuntimeException('The selected job could not be found.');
+        }
+
+        if (in_array((string) ($job['status'] ?? ''), ['ready', 'reviewed', 'failed'], true)) {
+            adminAiDeleteGenerationState($projectRoot, $jobUuid);
+            return;
+        }
+
+        $sectionPlan = syiAiSectionGenerationPlan($job);
+        $systemPrompt = syiAiBuildSystemPrompt($job);
+        $state = adminAiLoadGenerationState($projectRoot, $jobUuid);
+        if (!is_array($state)) {
+            $state = adminAiInitializeStepState($job, $sectionPlan);
+        }
+
+        $client = syiAiCreateClient();
+        $state['updated_at'] = date('c');
+
+        if (($state['current_stage'] ?? '') === 'prepare_outline') {
+            $outline = syiAiGenerateTopicOutline($client, $job);
+            $methodology = syiAiExtractMethodology($outline);
+
+            adminAiExecute(
+                'UPDATE student_jobs SET chapter_outline_markdown = ?, chapters_text = ?, methodology_text = ?, updated_at = NOW() WHERE job_uuid = ?',
+                [$outline, $outline, $methodology, $jobUuid]
+            );
+
+            $job = adminAiFetchJob($jobUuid);
+            if (!$job) {
+                throw new RuntimeException('The selected job could not be reloaded after preparing the outline.');
+            }
+
+            $sectionPlan = syiAiSectionGenerationPlan($job);
+            $state['current_stage'] = 'sections';
+            $state['section_order'] = adminAiSectionOrder($sectionPlan);
+            adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+            adminAiTouchJob($jobUuid);
+            return;
+        }
+
+        if (($state['current_stage'] ?? '') === 'sections') {
+            while (($state['section_index'] ?? 0) < count($state['section_order'] ?? [])) {
+                $sectionKey = (string) $state['section_order'][$state['section_index']];
+                if (!isset($sectionPlan[$sectionKey])) {
+                    $state['section_index']++;
+                    continue;
+                }
+
+                $sectionSpec = $sectionPlan[$sectionKey];
+                $currentMarkdown = trim((string) ($state['sections'][$sectionKey] ?? ''));
+                $currentWords = syiAiCountWords($currentMarkdown);
+                $minimumWords = max(250, (int) ($sectionSpec['min_words'] ?? 1200));
+                $completionThreshold = max(220, (int) round($minimumWords * 0.08));
+                $currentPass = (int) ($state['section_passes'][$sectionKey] ?? 0);
+                $remainingWords = max(0, $minimumWords - $currentWords);
+
+                if ($currentPass >= (int) ($sectionSpec['max_passes'] ?? 3) || ($currentPass > 0 && $remainingWords <= $completionThreshold)) {
+                    $state['section_index']++;
+                    continue;
+                }
+
+                $contextSections = [];
+                foreach (($state['section_order'] ?? []) as $contextKey) {
+                    if ($contextKey === $sectionKey) {
+                        continue;
+                    }
+                    if ($sectionKey !== 'abstract' && !in_array($contextKey, ['chapter_four', 'chapter_five', 'chapter_six'], true)) {
+                        continue;
+                    }
+                    if (!empty($state['sections'][$contextKey])) {
+                        $contextSections[] = (string) $state['sections'][$contextKey];
+                    }
+                }
+
+                $continuation = $currentPass > 0;
+                $chunkResult = adminAiGenerateSingleSectionChunk(
+                    $client,
+                    $job,
+                    $systemPrompt,
+                    $sectionSpec,
+                    implode("\n\n", $contextSections),
+                    $currentMarkdown,
+                    $remainingWords,
+                    $continuation
+                );
+
+                if ($chunkResult['chunk'] !== '') {
+                    if ($continuation) {
+                        $state['sections'][$sectionKey] = syiAiEnsureSectionHeading(
+                            syiAiFinalizeAcademicMarkdown($job, trim($currentMarkdown . "\n\n" . $chunkResult['chunk'])),
+                            (string) $sectionSpec['heading']
+                        );
+                    } else {
+                        $state['sections'][$sectionKey] = syiAiEnsureSectionHeading(
+                            syiAiFinalizeAcademicMarkdown($job, $chunkResult['chunk']),
+                            (string) $sectionSpec['heading']
+                        );
+                    }
+                }
+
+                $state['section_passes'][$sectionKey] = $currentPass + 1;
+                $state['models_used'][] = $chunkResult['model'];
+                adminAiAppendPromptLog($state, strtoupper($sectionKey) . ' | pass ' . ($currentPass + 1), $chunkResult['prompt']);
+                $state['updated_at'] = date('c');
+                adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+                adminAiPersistPreview($jobUuid, adminAiCombinedPreviewMarkdown($job, $state['sections']));
+                return;
+            }
+
+            $state['current_stage'] = 'expansion';
+            $state['expansion_pass'] = 1;
+            $state['expansion_index'] = 0;
+            adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+            adminAiTouchJob($jobUuid);
+            return;
+        }
+
+        if (($state['current_stage'] ?? '') === 'expansion') {
+            $targetWords = syiAiTargetWordCount($job);
+            $completionThreshold = max(700, (int) round($targetWords * 0.07));
+            $combinedWords = syiAiCountWords(adminAiCombinedPreviewMarkdown($job, $state['sections'] ?? []));
+            $remainingWords = max(0, $targetWords - $combinedWords);
+            $expansionOrder = array_values(array_filter(['chapter_four', 'chapter_five', 'chapter_six'], static fn($key) => !empty($state['sections'][$key])));
+
+            if ($remainingWords <= $completionThreshold || (int) ($state['expansion_pass'] ?? 1) > 3 || $expansionOrder === []) {
+                $state['current_stage'] = 'finalize';
+                adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+                adminAiTouchJob($jobUuid);
+                return;
+            }
+
+            if ((int) ($state['expansion_index'] ?? 0) >= count($expansionOrder)) {
+                $state['expansion_pass'] = (int) ($state['expansion_pass'] ?? 1) + 1;
+                $state['expansion_index'] = 0;
+                adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+                adminAiTouchJob($jobUuid);
+                return;
+            }
+
+            $sectionKey = (string) $expansionOrder[(int) ($state['expansion_index'] ?? 0)];
+            $sectionSpec = $sectionPlan[$sectionKey];
+            $currentSection = trim((string) ($state['sections'][$sectionKey] ?? ''));
+
+            if ($currentSection === '') {
+                $state['expansion_index'] = (int) ($state['expansion_index'] ?? 0) + 1;
+                adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+                adminAiTouchJob($jobUuid);
+                return;
+            }
+
+            $contextParts = [];
+            foreach (['chapter_four', 'chapter_five', 'chapter_six', 'abstract'] as $contextKey) {
+                if ($contextKey === $sectionKey) {
+                    continue;
+                }
+                if (!empty($state['sections'][$contextKey])) {
+                    $contextParts[] = (string) $state['sections'][$contextKey];
+                }
+            }
+
+            $chunkResult = adminAiGenerateSingleSectionChunk(
+                $client,
+                $job,
+                $systemPrompt,
+                $sectionSpec,
+                implode("\n\n", $contextParts),
+                $currentSection,
+                min($remainingWords, max(1200, (int) round(($sectionSpec['min_words'] ?? 1200) * 0.22))),
+                true
+            );
+
+            if ($chunkResult['chunk'] !== '') {
+                $state['sections'][$sectionKey] = syiAiEnsureSectionHeading(
+                    syiAiFinalizeAcademicMarkdown($job, trim($currentSection . "\n\n" . $chunkResult['chunk'])),
+                    (string) $sectionSpec['heading']
+                );
+            }
+
+            $state['models_used'][] = $chunkResult['model'];
+            adminAiAppendPromptLog(
+                $state,
+                strtoupper($sectionKey) . ' | expansion ' . (int) ($state['expansion_pass'] ?? 1),
+                $chunkResult['prompt']
+            );
+            $state['expansion_index'] = (int) ($state['expansion_index'] ?? 0) + 1;
+            $state['updated_at'] = date('c');
+            adminAiSaveGenerationState($projectRoot, $jobUuid, $state);
+            adminAiPersistPreview($jobUuid, adminAiCombinedPreviewMarkdown($job, $state['sections']));
+            return;
+        }
+
+        if (($state['current_stage'] ?? '') === 'finalize') {
+            adminAiFinalizeGeneratedJob($jobUuid, $projectRoot, $job, $state, $systemPrompt);
+            return;
+        }
+    } catch (Throwable $throwable) {
+        error_log('Stepped AI generation failed for job ' . $jobUuid . ': ' . $throwable->getMessage());
+        adminAiDeleteGenerationState($projectRoot, $jobUuid);
+        adminAiPersistFailure($jobUuid, $throwable->getMessage());
+    } finally {
+        adminAiReleaseGenerationLock($lockHandle);
+    }
 }
 
 function adminAiStartDetachedCliWorker(string $jobUuid): bool
@@ -675,13 +1160,20 @@ function adminAiStatusBadge(string $status): string
             ], 404);
         }
 
-        if (adminAiJobLooksStalled($job)) {
+        $hasStepState = adminAiStepRunnerEnabled() && adminAiLoadGenerationState($projectRoot, $jobUuid) !== null;
+        if ((string) ($job['status'] ?? '') === 'generating' && adminAiStepRunnerEnabled()) {
+            adminAiAdvanceStepGeneration($jobUuid, $projectRoot);
+            $job = adminAiFetchJob($jobUuid) ?? $job;
+            $hasStepState = adminAiLoadGenerationState($projectRoot, $jobUuid) !== null;
+        }
+
+        if (!$hasStepState && adminAiJobLooksStalled($job)) {
             adminAiExecute(
                 'UPDATE student_jobs SET status = ?, error_message = NULL, updated_at = NOW() WHERE job_uuid = ?',
                 ['generating', $jobUuid]
             );
 
-            $runner = adminAiStartAnyBackgroundWorker($jobUuid);
+            $runner = adminAiStartAnyBackgroundWorker($jobUuid, $projectRoot);
             if ($runner === null) {
                 adminAiPersistFailure(
                     $jobUuid,
@@ -748,8 +1240,9 @@ function adminAiStatusBadge(string $status): string
             'UPDATE student_jobs SET status = ?, error_message = NULL WHERE job_uuid = ?',
             ['generating', $jobUuid]
         );
+        adminAiDeleteGenerationState($projectRoot, $jobUuid);
 
-        $runner = adminAiStartAnyBackgroundWorker($jobUuid);
+        $runner = adminAiStartAnyBackgroundWorker($jobUuid, $projectRoot);
         if ($runner !== null) {
             adminAiJsonResponse([
                 'ok' => true,
@@ -947,6 +1440,7 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
         const shouldAutoStart = <?php echo $shouldAutoStart ? 'true' : 'false'; ?>;
         const endpointUrl = new URL(window.location.href);
         let pollTimer = null;
+        let pollInFlight = false;
 
         function refreshPage() {
           window.location.reload();
@@ -983,6 +1477,11 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
           }
 
           pollTimer = window.setInterval(async function() {
+            if (pollInFlight) {
+              return;
+            }
+
+            pollInFlight = true;
             try {
               const pollUrl = new URL(endpointUrl.href);
               pollUrl.searchParams.set('job', jobUuid);
@@ -1013,8 +1512,10 @@ $previewText = $job ? (string) ($job['ai_markdown'] ?? '') : '';
               }
             } catch (error) {
               console.error('Polling error', error);
+            } finally {
+              pollInFlight = false;
             }
-          }, 5000);
+          }, 8000);
         }
 
         async function startWorker(forceRestart = false) {

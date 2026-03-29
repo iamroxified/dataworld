@@ -181,6 +181,7 @@ function syiAiEnsureStorage(string $projectRoot): array
         'source' => $baseDir . DIRECTORY_SEPARATOR . 'source',
         'generated' => $baseDir . DIRECTORY_SEPARATOR . 'generated',
         'charts' => $baseDir . DIRECTORY_SEPARATOR . 'charts',
+        'runtime' => $baseDir . DIRECTORY_SEPARATOR . 'runtime',
     ];
 
     foreach ($paths as $path) {
