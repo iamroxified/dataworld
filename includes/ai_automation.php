@@ -306,9 +306,14 @@ function syiAiExtractDocumentText(string $filePath): string
 
 function syiAiExtractPdfText(string $filePath): string
 {
-    $parser = new PdfParser();
-    $pdf = $parser->parseFile($filePath);
-    return syiAiNormalizeText($pdf->getText());
+    try {
+        $parser = new PdfParser();
+        $pdf = $parser->parseFile($filePath);
+        return syiAiNormalizeText($pdf->getText());
+    } catch (Throwable $throwable) {
+        error_log('PDF extraction failed for ' . $filePath . ': ' . $throwable->getMessage());
+        return '';
+    }
 }
 
 function syiAiExtractDocxText(string $filePath): string

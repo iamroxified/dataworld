@@ -159,22 +159,35 @@ function adminPrepareAutomationPayload(array $request, string $projectRoot): arr
     $chaptersAbsolutePath = syiAiAbsolutePath($projectRoot, $chaptersPath);
 
     if ($chaptersAbsolutePath && is_file($chaptersAbsolutePath)) {
-        $chaptersText = syiAiExtractDocumentText($chaptersAbsolutePath);
-        $methodologyText = syiAiExtractMethodology($chaptersText);
+        try {
+            $chaptersText = syiAiExtractDocumentText($chaptersAbsolutePath);
+            $methodologyText = syiAiExtractMethodology($chaptersText);
+        } catch (Throwable $throwable) {
+            error_log('Chapter extraction failed: ' . $throwable->getMessage());
+            $chaptersText = null;
+            $methodologyText = null;
+        }
     }
 
     $questionairePath = $request['questionaire'] ?? null;
     $questionaireAbsolutePath = syiAiAbsolutePath($projectRoot, $questionairePath);
     if ($questionaireAbsolutePath && is_file($questionaireAbsolutePath)) {
-        if (syiAiIsDatasetFile($questionairePath)) {
-            $datasetPath = $questionairePath;
-            $datasetOriginalName = basename((string) $questionairePath);
-            $datasetSummaryJson = json_encode(
-                syiAiSummarizeDataset($questionaireAbsolutePath),
-                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
-            );
-        } elseif (in_array(strtolower((string) pathinfo((string) $questionairePath, PATHINFO_EXTENSION)), ['pdf', 'docx', 'doc', 'txt'], true)) {
-            $questionnaireText = syiAiExtractDocumentText($questionaireAbsolutePath);
+        try {
+            if (syiAiIsDatasetFile($questionairePath)) {
+                $datasetPath = $questionairePath;
+                $datasetOriginalName = basename((string) $questionairePath);
+                $datasetSummaryJson = json_encode(
+                    syiAiSummarizeDataset($questionaireAbsolutePath),
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                );
+            } elseif (in_array(strtolower((string) pathinfo((string) $questionairePath, PATHINFO_EXTENSION)), ['pdf', 'docx', 'doc', 'txt'], true)) {
+                $questionnaireText = syiAiExtractDocumentText($questionaireAbsolutePath);
+            }
+        } catch (Throwable $throwable) {
+            error_log('Questionnaire extraction failed: ' . $throwable->getMessage());
+            $questionnaireText = null;
+            $datasetSummaryJson = null;
+            $datasetPath = null;
         }
     }
 
