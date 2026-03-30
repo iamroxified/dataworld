@@ -155,6 +155,21 @@ function adminPrepareAutomationPayload(array $request, string $projectRoot): arr
         ], static fn($value) => trim((string) $value) !== '')));
     }
 
+    $hasChapterFile = !empty($request['chapter3_file']) && $chaptersAbsolutePath && is_file($chaptersAbsolutePath);
+    $hasQuestionnaireFile = !empty($request['questionaire']) && $questionaireAbsolutePath && is_file($questionaireAbsolutePath);
+    $coverage = syiAiAssessInputCoverage($chaptersText, $datasetSummaryJson, [
+        'has_chapter_file' => $hasChapterFile,
+        'has_questionnaire_file' => $hasQuestionnaireFile,
+    ]);
+    if (!empty($coverage['missing'])) {
+        adminAuditMissingAutomationInputs((int) $request['id'], $coverage['missing']);
+        throw new RuntimeException(
+            'Automation paused. We are missing required inputs: ' . implode(', ', $coverage['missing']) . '. ' .
+            'Please upload Chapter One (with objectives, research questions, hypotheses), Chapter Three (methodology), ' .
+            'and the questionnaire or dataset responses, then retry.'
+        );
+    }
+
     $submissionMode = ($chaptersText !== null || $datasetSummaryJson !== null) ? 'full_upload' : 'topic_only';
 
     return [
@@ -173,6 +188,84 @@ function adminPrepareAutomationPayload(array $request, string $projectRoot): arr
         'dataset_summary_json' => $datasetSummaryJson,
         'chapter_outline_markdown' => $chapterOutlineMarkdown,
     ];
+}
+
+function adminAuditMissingAutomationInputs(int $requestId, array $missing): void
+{
+    if ($requestId <= 0 || $missing === []) {
+        return;
+    }
+
+    try {
+        global $pdo;
+        if (!$pdo instanceof PDO) {
+            return;
+        }
+
+        $jobUuid = adminAutomationJobUuid($requestId);
+        $stmt = $pdo->prepare('SELECT job_uuid FROM student_jobs WHERE job_uuid = ? LIMIT 1');
+        $stmt->execute([$jobUuid]);
+        $exists = $stmt->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+
+        $message = 'Missing required inputs: ' . implode(', ', $missing) . '.';
+        $update = $pdo->prepare('UPDATE student_jobs SET error_message = ?, updated_at = NOW() WHERE job_uuid = ?');
+        $update->execute([$message, $jobUuid]);
+    } catch (Throwable $throwable) {
+        error_log('Unable to audit missing automation inputs: ' . $throwable->getMessage());
+    }
+}
+
+function adminComputeAutomationCoverage(array $request, string $projectRoot): array
+{
+    $chaptersText = null;
+    $datasetSummaryJson = null;
+    $questionnaireText = null;
+
+    $chaptersPath = $request['chapter3_file'] ?? null;
+    $chaptersAbsolutePath = syiAiAbsolutePath($projectRoot, $chaptersPath);
+    if ($chaptersAbsolutePath && is_file($chaptersAbsolutePath)) {
+        try {
+            $chaptersText = syiAiExtractDocumentText($chaptersAbsolutePath);
+        } catch (Throwable $throwable) {
+            $chaptersText = $chaptersText ?? null;
+        }
+    }
+
+    $questionairePath = $request['questionaire'] ?? null;
+    $questionaireAbsolutePath = syiAiAbsolutePath($projectRoot, $questionairePath);
+    if ($questionaireAbsolutePath && is_file($questionaireAbsolutePath)) {
+        try {
+            if (syiAiIsDatasetFile($questionairePath)) {
+                $datasetSummaryJson = json_encode(
+                    syiAiSummarizeDataset($questionaireAbsolutePath),
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                );
+            } elseif (in_array(strtolower((string) pathinfo((string) $questionairePath, PATHINFO_EXTENSION)), ['pdf', 'docx', 'doc', 'txt'], true)) {
+                $questionnaireText = syiAiExtractDocumentText($questionaireAbsolutePath);
+            }
+        } catch (Throwable $throwable) {
+            $datasetSummaryJson = $datasetSummaryJson ?? null;
+            $questionnaireText = $questionnaireText ?? null;
+        }
+    }
+
+    if ($questionnaireText !== null && trim($questionnaireText) !== '') {
+        $chaptersText = trim(implode("\n\n", array_filter([
+            $chaptersText,
+            "Questionnaire / Research Instrument\n" . $questionnaireText,
+        ], static fn($value) => trim((string) $value) !== '')));
+    }
+
+    $hasChapterFile = !empty($request['chapter3_file']) && $chaptersAbsolutePath && is_file($chaptersAbsolutePath);
+    $hasQuestionnaireFile = !empty($request['questionaire']) && $questionaireAbsolutePath && is_file($questionaireAbsolutePath);
+
+    return syiAiAssessInputCoverage($chaptersText, $datasetSummaryJson, [
+        'has_chapter_file' => $hasChapterFile,
+        'has_questionnaire_file' => $hasQuestionnaireFile,
+    ]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -404,6 +497,8 @@ if (!$request) {
 }
 
 $automationJob = adminFetchAutomationJob($pdo, $requestId);
+$inputCoverage = adminComputeAutomationCoverage($request, $projectRoot);
+$automationBlocked = !empty($inputCoverage['missing']);
 $selectedDegreeLevel = $automationJob && isset($automationJob['degree_level'])
     ? (string) $automationJob['degree_level']
     : 'BSc/HND';
@@ -586,6 +681,57 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
                     <p class="mb-0"><strong>Payment:</strong> <?php echo $request['payment_status'] === 'completed' ? 'Cleared for automation' : 'Automation locked until payment is completed'; ?></p>
                   </div>
 
+                  <?php if ($automationBlocked): ?>
+                    <div class="alert alert-warning">
+                      <strong>Automation paused:</strong> Missing required inputs: <?php echo htmlspecialchars(implode(', ', $inputCoverage['missing']), ENT_QUOTES, 'UTF-8'); ?>.
+                      Upload the items below to proceed.
+                    </div>
+                  <?php endif; ?>
+
+                  <div class="mb-3">
+                    <div class="list-group">
+                      <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                          Chapter One (objectives, research questions, hypotheses)
+                          <?php if (empty($inputCoverage['has_chapter_one']) || empty($inputCoverage['has_objectives']) || empty($inputCoverage['has_research_questions']) || empty($inputCoverage['has_hypotheses'])): ?>
+                            <small class="d-block">
+                              <a href="upload_chapter3.php?id=<?php echo (int) $requestId; ?>">Upload Chapter 1-3 file</a>
+                            </small>
+                          <?php endif; ?>
+                        </div>
+                        <span class="badge bg-<?php echo !empty($inputCoverage['has_chapter_one']) && !empty($inputCoverage['has_objectives']) && !empty($inputCoverage['has_research_questions']) && !empty($inputCoverage['has_hypotheses']) ? 'success' : 'danger'; ?>">
+                          <?php echo !empty($inputCoverage['has_chapter_one']) && !empty($inputCoverage['has_objectives']) && !empty($inputCoverage['has_research_questions']) && !empty($inputCoverage['has_hypotheses']) ? 'Present' : 'Missing'; ?>
+                        </span>
+                      </div>
+                      <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                          Chapter Three (methodology)
+                          <?php if (empty($inputCoverage['has_chapter_three'])): ?>
+                            <small class="d-block">
+                              <a href="upload_chapter3.php?id=<?php echo (int) $requestId; ?>">Upload Chapter 1-3 file</a>
+                            </small>
+                          <?php endif; ?>
+                        </div>
+                        <span class="badge bg-<?php echo !empty($inputCoverage['has_chapter_three']) ? 'success' : 'danger'; ?>">
+                          <?php echo !empty($inputCoverage['has_chapter_three']) ? 'Present' : 'Missing'; ?>
+                        </span>
+                      </div>
+                      <div class="list-group-item d-flex justify-content-between align-items-center">
+                        <div>
+                          Questionnaire or dataset responses
+                          <?php if (empty($inputCoverage['has_questionnaire_text']) && empty($inputCoverage['has_dataset'])): ?>
+                            <small class="d-block">
+                              <a href="upload_questionnaire.php?id=<?php echo (int) $requestId; ?>">Upload questionnaire / dataset</a>
+                            </small>
+                          <?php endif; ?>
+                        </div>
+                        <span class="badge bg-<?php echo (!empty($inputCoverage['has_questionnaire_text']) || !empty($inputCoverage['has_dataset'])) ? 'success' : 'danger'; ?>">
+                          <?php echo (!empty($inputCoverage['has_questionnaire_text']) || !empty($inputCoverage['has_dataset'])) ? 'Present' : 'Missing'; ?>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
                   <?php if ($automationJob): ?>
                     <div class="mb-3">
                       <span class="badge bg-<?php echo adminAutomationBadge((string) $automationJob['status']); ?>">
@@ -651,7 +797,7 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
                       <label class="form-label">Admin Notes</label>
                       <textarea class="form-control" name="admin_notes" rows="3"><?php echo htmlspecialchars((string) ($automationJob['admin_notes'] ?? '')); ?></textarea>
                     </div>
-                    <button type="submit" name="trigger_automation" class="btn btn-success w-100" <?php echo $request['payment_status'] !== 'completed' ? 'disabled' : ''; ?>>
+                    <button type="submit" name="trigger_automation" class="btn btn-success w-100" <?php echo ($request['payment_status'] !== 'completed' || $automationBlocked) ? 'disabled' : ''; ?>>
                       Trigger Automation
                     </button>
                   </form>

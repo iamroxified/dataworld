@@ -767,6 +767,23 @@ function adminAiAdvanceStepGeneration(string $jobUuid, string $projectRoot): voi
             throw new RuntimeException('The selected job could not be found.');
         }
 
+        $chapterPath = syiAiAbsolutePath($projectRoot, $job['chapters_path'] ?? null);
+        $datasetPath = syiAiAbsolutePath($projectRoot, $job['dataset_path'] ?? null);
+        $coverage = syiAiAssessInputCoverage($job['chapters_text'] ?? '', $job['dataset_summary_json'] ?? '', [
+            'has_chapter_file' => $chapterPath && is_file($chapterPath),
+            'has_questionnaire_file' => $datasetPath && is_file($datasetPath),
+        ]);
+        if (!empty($coverage['missing'])) {
+            adminAiPersistFailure(
+                $jobUuid,
+                'Generation paused. Missing required inputs: ' . implode(', ', $coverage['missing']) .
+                '. Please upload Chapter One (objectives, research questions, hypotheses), Chapter Three (methodology), ' .
+                'and the questionnaire or dataset responses, then retry.'
+            );
+            adminAiDeleteGenerationState($projectRoot, $jobUuid);
+            return;
+        }
+
         if (in_array((string) ($job['status'] ?? ''), ['ready', 'reviewed', 'failed'], true)) {
             adminAiDeleteGenerationState($projectRoot, $jobUuid);
             return;
@@ -1037,6 +1054,20 @@ function adminAiProcessJob(string $jobUuid, string $projectRoot): void
         $job = adminAiFetchJob($jobUuid);
         if (!$job) {
             throw new RuntimeException('The selected job could not be found.');
+        }
+
+        $chapterPath = syiAiAbsolutePath($projectRoot, $job['chapters_path'] ?? null);
+        $datasetPath = syiAiAbsolutePath($projectRoot, $job['dataset_path'] ?? null);
+        $coverage = syiAiAssessInputCoverage($job['chapters_text'] ?? '', $job['dataset_summary_json'] ?? '', [
+            'has_chapter_file' => $chapterPath && is_file($chapterPath),
+            'has_questionnaire_file' => $datasetPath && is_file($datasetPath),
+        ]);
+        if (!empty($coverage['missing'])) {
+            throw new RuntimeException(
+                'Generation paused. Missing required inputs: ' . implode(', ', $coverage['missing']) .
+                '. Please upload Chapter One (objectives, research questions, hypotheses), Chapter Three (methodology), ' .
+                'and the questionnaire or dataset responses, then retry.'
+            );
         }
 
         adminAiExecute(

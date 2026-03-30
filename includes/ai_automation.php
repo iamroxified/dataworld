@@ -376,6 +376,226 @@ function syiAiExtractMethodology(string $chaptersText): string
     return trim($methodology);
 }
 
+function syiAiContainsAny(string $text, array $needles): bool
+{
+    $lower = strtolower($text);
+    foreach ($needles as $needle) {
+        $needle = trim((string) $needle);
+        if ($needle === '') {
+            continue;
+        }
+        if (str_contains($lower, $needle)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function syiAiContainsAll(string $text, array $needles): bool
+{
+    $lower = strtolower($text);
+    foreach ($needles as $needle) {
+        $needle = trim((string) $needle);
+        if ($needle === '') {
+            continue;
+        }
+        if (!str_contains($lower, $needle)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+function syiAiExtractSectionByMarkers(string $text, array $startPatterns, array $endPatterns, int $maxLength = 12000): string
+{
+    $text = trim($text);
+    if ($text === '') {
+        return '';
+    }
+
+    $lower = strtolower($text);
+    $start = null;
+    foreach ($startPatterns as $pattern) {
+        $position = strpos($lower, $pattern);
+        if ($position !== false) {
+            $start = $position;
+            break;
+        }
+    }
+
+    if ($start === null) {
+        return trim(mb_substr($text, 0, $maxLength, 'UTF-8'));
+    }
+
+    $end = null;
+    foreach ($endPatterns as $pattern) {
+        $position = strpos($lower, $pattern, $start + 50);
+        if ($position !== false) {
+            $end = $position;
+            break;
+        }
+    }
+
+    if ($end !== null && $end > $start) {
+        return trim(mb_substr($text, $start, $end - $start, 'UTF-8'));
+    }
+
+    return trim(mb_substr($text, $start, $maxLength, 'UTF-8'));
+}
+
+function syiAiExtractChapterOneText(string $chaptersText): string
+{
+    return syiAiExtractSectionByMarkers(
+        $chaptersText,
+        ['chapter one', 'chapter 1', 'chapter i', 'introduction', 'background of the study'],
+        ['chapter two', 'chapter 2', 'chapter ii', 'literature review', 'chapter three', 'chapter 3', 'methodology']
+    );
+}
+
+function syiAiExtractChapterThreeText(string $chaptersText): string
+{
+    return syiAiExtractSectionByMarkers(
+        $chaptersText,
+        ['chapter three', 'chapter 3', 'chapter iii', 'methodology', 'research methodology'],
+        ['chapter four', 'chapter 4', 'results', 'data presentation', 'analysis']
+    );
+}
+
+function syiAiExtractQuestionnaireText(string $chaptersText): string
+{
+    return syiAiExtractSectionByMarkers(
+        $chaptersText,
+        ['questionnaire', 'research instrument', 'instrument'],
+        ['chapter four', 'chapter 4', 'results', 'data presentation', 'analysis', 'appendix']
+    );
+}
+
+function syiAiHasDatasetSummary(?string $datasetSummaryJson): bool
+{
+    $raw = trim((string) $datasetSummaryJson);
+    if ($raw === '' || strtolower($raw) === 'null') {
+        return false;
+    }
+
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) && $decoded !== [];
+}
+
+function syiAiAssessInputCoverage(?string $chaptersText, ?string $datasetSummaryJson, array $hints = []): array
+{
+    $chaptersText = trim((string) $chaptersText);
+    $hasChapterOneMarker = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'chapter one',
+        'chapter 1',
+        'chapter i',
+        'introduction',
+        'background of the study',
+        'statement of the problem',
+        'scope of the study',
+        'significance of the study',
+    ]);
+    $hasObjectives = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'research objectives',
+        'objectives of the study',
+        'objectives',
+        'aim of the study',
+        'aims of the study',
+    ]);
+    $hasResearchQuestions = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'research questions',
+        'research question',
+        'study questions',
+        'questions of the study',
+    ]);
+    $hasHypotheses = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'hypotheses',
+        'hypothesis',
+        'research hypothesis',
+        'research hypotheses',
+        'null hypothesis',
+        'alternative hypothesis',
+        'h0',
+        'h1',
+    ]);
+    $hasChapterOne = $hasChapterOneMarker || syiAiContainsAll($chaptersText, ['objectives', 'research question']);
+
+    $hasChapterThreeMarker = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'chapter three',
+        'chapter 3',
+        'chapter iii',
+        'methodology',
+        'research methodology',
+    ]);
+    $hasMethodSignals = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'research design',
+        'population of the study',
+        'sample size',
+        'sampling technique',
+        'instrument',
+        'validity',
+        'reliability',
+        'method of data analysis',
+        'materials and methods',
+        'data analysis',
+    ]);
+    $hasChapterThree = $hasChapterThreeMarker || $hasMethodSignals;
+
+    $hasQuestionnaireText = $chaptersText !== '' && syiAiContainsAny($chaptersText, [
+        'questionnaire',
+        'research instrument',
+        'instrument used',
+        'section a',
+        'section b',
+        'likert',
+        'strongly agree',
+        'strongly disagree',
+        'agree',
+        'disagree',
+        'scale',
+        'appendix a',
+        'appendix b',
+    ]);
+    $hasDataset = syiAiHasDatasetSummary($datasetSummaryJson);
+    $hasQuestionnaire = $hasQuestionnaireText || $hasDataset;
+
+    if (!empty($hints['has_chapter_file'])) {
+        $hasChapterOne = true;
+        $hasObjectives = true;
+        $hasResearchQuestions = true;
+        $hasHypotheses = true;
+        $hasChapterThree = true;
+    }
+
+    if (!empty($hints['has_questionnaire_file'])) {
+        $hasQuestionnaireText = true;
+        $hasQuestionnaire = true;
+    }
+
+    $missing = [];
+    if (!$hasChapterOne || !$hasObjectives || !$hasResearchQuestions || !$hasHypotheses) {
+        $missing[] = 'Chapter One (objectives, research questions, hypotheses)';
+    }
+    if (!$hasChapterThree) {
+        $missing[] = 'Chapter Three (methodology)';
+    }
+    if (!$hasQuestionnaire) {
+        $missing[] = 'Questionnaire or dataset responses';
+    }
+
+    return [
+        'missing' => $missing,
+        'has_chapter_one' => $hasChapterOne,
+        'has_objectives' => $hasObjectives,
+        'has_research_questions' => $hasResearchQuestions,
+        'has_hypotheses' => $hasHypotheses,
+        'has_chapter_three' => $hasChapterThree,
+        'has_questionnaire_text' => $hasQuestionnaireText,
+        'has_dataset' => $hasDataset,
+    ];
+}
+
 function syiAiSummarizeDataset(string $filePath): array
 {
     $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
@@ -1462,6 +1682,11 @@ function syiAiBuildGenerationUserPrompt(array $job): string
 {
     $datasetSummary = json_decode((string) ($job['dataset_summary_json'] ?? ''), true) ?: [];
     $compactDatasetSummary = syiAiCompactDatasetSummary($datasetSummary);
+    $chaptersText = (string) ($job['chapters_text'] ?? '');
+    $chapterOneExcerpt = syiAiTruncate(syiAiExtractChapterOneText($chaptersText), 4500);
+    $chapterThreeExcerpt = syiAiTruncate(syiAiExtractChapterThreeText($chaptersText), 4500);
+    $questionnaireExcerpt = syiAiTruncate(syiAiExtractQuestionnaireText($chaptersText), 3500);
+    $inputCoverage = syiAiAssessInputCoverage($chaptersText, (string) ($job['dataset_summary_json'] ?? ''));
     $degreeLevel = (string) ($job['degree_level'] ?? 'BSc/HND');
     $targetPages = (int) ($job['target_pages'] ?? syiAiRecommendedPagesForDegree($degreeLevel));
     $analysisPackage = [
@@ -1481,6 +1706,10 @@ function syiAiBuildGenerationUserPrompt(array $job): string
         'detected_method' => syiAiDetectMethod((string) ($job['methodology_text'] ?? ''), $datasetSummary),
         'methodology_excerpt' => syiAiTruncate((string) ($job['methodology_text'] ?? ''), 3500),
         'chapters_1_to_3_and_instrument_excerpt' => syiAiTruncate((string) ($job['chapters_text'] ?? ''), 6500),
+        'chapter_one_excerpt' => $chapterOneExcerpt,
+        'chapter_three_excerpt' => $chapterThreeExcerpt,
+        'questionnaire_excerpt' => $questionnaireExcerpt,
+        'input_coverage_flags' => $inputCoverage,
         'topic_outline' => syiAiTruncate((string) ($job['chapter_outline_markdown'] ?? ''), 2500),
         'dataset_summary' => $compactDatasetSummary,
         'admin_notes' => (string) ($job['admin_notes'] ?? ''),
@@ -1494,6 +1723,8 @@ function syiAiBuildGenerationUserPrompt(array $job): string
             'Do not merge any table cell',
             'Treat all research questions',
             'Treat all questionnaire items in tabular form where applicable',
+            'Before generating Chapter Four and analysis, strictly read and integrate Chapter One (objectives, research questions, hypotheses), Chapter Three (methodology), and the Questionnaire/Instrument (data structure).',
+            'Do not proceed if any of Chapter One, Chapter Three, or Questionnaire/Instrument is missing per input_coverage_flags.',
             'Each table interpretation must be 150 words or more',
             'Each graph interpretation must be 300 words or more',
             'Each graph interpretation must explain trend, comparison, and implication to the study',
@@ -1513,7 +1744,11 @@ function syiAiBuildGenerationUserPrompt(array $job): string
     }
 
     if ($compactDatasetSummary === []) {
-        $analysisPackage['dataset_unavailable_instruction'] = 'No machine-readable dataset summary was available. Use the methodology and project variables to create academically plausible placeholder tables, hypothesis tests, graphs, and interpretations in Nigerian university style without mentioning AI.';
+        if ($questionnaireExcerpt !== '') {
+            $analysisPackage['dataset_unavailable_instruction'] = 'No machine-readable dataset summary was available. Generate a synthetic dataset based on the questionnaire responses using a Likert scale distribution aligned with the research objectives and questions. Use the methodology and project variables to create academically plausible tables, hypothesis tests, graphs, and interpretations in Nigerian university style without mentioning AI.';
+        } else {
+            $analysisPackage['dataset_unavailable_instruction'] = 'No machine-readable dataset summary was available. Use the methodology and project variables to create academically plausible placeholder tables, hypothesis tests, graphs, and interpretations in Nigerian university style without mentioning AI.';
+        }
     }
 
     return implode("\n\n", [

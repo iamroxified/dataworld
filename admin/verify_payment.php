@@ -3,7 +3,11 @@ require_once '../db/config.php';
 
 if (isset($_GET['reference'])) {
     $reference = $_GET['reference'];
-    $secret_key = 'sk_test_05874f80c16f499e989b25e1cbc1c0eb7e98a6a0'; // Replace with your secret key
+    $secret_key = trim((string) getenv('PAYSTACK_SECRET_KEY'));
+    if ($secret_key === '') {
+        header('Location: analytics_request.php?payment=failed');
+        exit();
+    }
 
     $curl = curl_init();
     
