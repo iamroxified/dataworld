@@ -33,6 +33,24 @@ $orders_query = QueryDB("SELECT o.* FROM orders o LEFT JOIN binding_requests br 
                       [$user_id]);
 $orders = $orders_query->fetchAll(PDO::FETCH_ASSOC);
 
+$defaultFullName = trim((string) ($current_user['full_name'] ?? ''));
+if ($defaultFullName === '') {
+    $defaultFullName = trim((string) ($current_user['first_name'] ?? '') . ' ' . (string) ($current_user['last_name'] ?? ''));
+}
+
+foreach ($orders as &$order) {
+    if (!isset($order['order_status'])) {
+        $order['order_status'] = $order['status'] ?? 'pending';
+    }
+    if (!isset($order['total_pv'])) {
+        $order['total_pv'] = 0;
+    }
+    if (!isset($order['full_name'])) {
+        $order['full_name'] = $defaultFullName !== '' ? $defaultFullName : 'N/A';
+    }
+}
+unset($order);
+
 $binding_requests_query = QueryDB("SELECT br.*, o.status FROM binding_requests br JOIN orders o ON br.order_id = o.id WHERE br.user_id = ? ORDER BY br.created_at DESC", [$user_id]);
 $binding_requests = $binding_requests_query->fetchAll(PDO::FETCH_ASSOC);
 
