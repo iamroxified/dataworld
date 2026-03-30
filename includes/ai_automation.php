@@ -713,9 +713,18 @@ function syiAiSummarizeSpreadsheet(string $filePath): array
     $highestColumn = $sheet->getHighestDataColumn();
     $highestColumnIndex = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::columnIndexFromString($highestColumn);
 
+    $cellValue = static function ($sheet, int $column, int $row): string {
+        if (method_exists($sheet, 'getCellByColumnAndRow')) {
+            return (string) $sheet->getCellByColumnAndRow($column, $row)->getFormattedValue();
+        }
+
+        $columnLetter = \PhpOffice\PhpSpreadsheet\Cell\Coordinate::stringFromColumnIndex($column);
+        return (string) $sheet->getCell($columnLetter . $row)->getFormattedValue();
+    };
+
     $rawHeaders = [];
     for ($column = 1; $column <= $highestColumnIndex; $column++) {
-        $rawHeaders[] = (string) $sheet->getCellByColumnAndRow($column, 1)->getFormattedValue();
+        $rawHeaders[] = $cellValue($sheet, $column, 1);
     }
 
     $headers = syiAiNormalizeHeaders($rawHeaders);
@@ -728,7 +737,7 @@ function syiAiSummarizeSpreadsheet(string $filePath): array
         $hasValue = false;
 
         for ($column = 1; $column <= $highestColumnIndex; $column++) {
-            $value = $sheet->getCellByColumnAndRow($column, $rowIndex)->getFormattedValue();
+            $value = $cellValue($sheet, $column, $rowIndex);
             if (trim((string) $value) !== '') {
                 $hasValue = true;
             }
