@@ -153,6 +153,21 @@ function syiAiRequestIdFromJobUuid(string $jobUuid): ?int
 
     return (int) $matches[1];
 }
+
+function syiAiFormatDateTime(?string $value): string
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return 'N/A';
+    }
+
+    $timestamp = strtotime($value);
+    if ($timestamp === false) {
+        return $value;
+    }
+
+    return date('M d, Y H:i', $timestamp);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -302,19 +317,20 @@ function syiAiRequestIdFromJobUuid(string $jobUuid): ?int
                 </div>
                 <div class="card-body">
                   <div class="table-responsive">
-                    <table class="display table table-striped table-hover queue-table">
+                    <table id="jobs-table" class="display table table-striped table-hover queue-table">
                       <thead>
                         <tr>
                           <th>Student</th>
                           <th>Topic</th>
                           <th>Status</th>
+                          <th>Created</th>
                           <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         <?php if ($jobs === []): ?>
                           <tr>
-                            <td colspan="4" class="text-center text-muted">No jobs found.</td>
+                            <td colspan="5" class="text-center text-muted">No jobs found.</td>
                           </tr>
                         <?php endif; ?>
 
@@ -330,8 +346,11 @@ function syiAiRequestIdFromJobUuid(string $jobUuid): ?int
                                 <?php echo htmlspecialchars(ucfirst((string) $jobItem['status'])); ?>
                               </span>
                             </td>
+                            <td data-order="<?php echo htmlspecialchars((string) $jobItem['created_at']); ?>">
+                              <?php echo htmlspecialchars(syiAiFormatDateTime((string) ($jobItem['created_at'] ?? ''))); ?>
+                            </td>
                             <td>
-                              <a class="btn btn-primary btn-sm" href="admin_settings.php?job=<?php echo urlencode((string) $jobItem['job_uuid']); ?>">
+                              <a class="btn btn-primary btn-sm" href="job_details.php?job=<?php echo urlencode((string) $jobItem['job_uuid']); ?>">
                                 Open
                               </a>
                             </td>
@@ -472,6 +491,19 @@ function syiAiRequestIdFromJobUuid(string $jobUuid): ?int
       </div>
 
       <?php include('nav/footer.php'); ?>
+      <script>
+        (function() {
+          if (typeof $ === 'undefined' || !$.fn.DataTable) {
+            return;
+          }
+          $('#jobs-table').DataTable({
+            order: [[3, 'desc']],
+            pageLength: 10,
+            lengthMenu: [10, 25, 50, 100],
+            responsive: true
+          });
+        })();
+      </script>
     </div>
   </div>
 </body>
