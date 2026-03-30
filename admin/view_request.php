@@ -753,6 +753,13 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
                         <h5 class="card-title mb-0">Manual Inputs (Admin)</h5>
                       </div>
                       <div class="card-body">
+                        <?php
+                          $manualPreview = $manualBlock !== ''
+                              ? $manualBlock
+                              : adminBuildManualInputsBlock([]);
+                        ?>
+                        <div class="row">
+                          <div class="col-md-6">
                         <form method="post">
                           <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(syiAiCsrfToken(), ENT_QUOTES, 'UTF-8'); ?>">
                           <div class="form-group mb-3">
@@ -775,6 +782,17 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
                             Save Manual Inputs
                           </button>
                         </form>
+                          </div>
+                          <div class="col-md-6">
+                            <div class="border rounded p-3 bg-light">
+                              <div class="d-flex align-items-center justify-content-between mb-2">
+                                <strong>Preview Manual Inputs</strong>
+                                <small class="text-muted">Stored in admin notes</small>
+                              </div>
+                              <pre class="mb-0" style="white-space: pre-wrap; font-size: 0.9rem;"><?php echo htmlspecialchars($manualPreview, ENT_QUOTES, 'UTF-8'); ?></pre>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   <?php endif; ?>
