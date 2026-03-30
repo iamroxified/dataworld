@@ -603,7 +603,7 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
           <?php endif; ?>
 
           <div class="row">
-            <div class="col-md-8">
+            <div class="col-md-6">
               <div class="card mb-4">
                 <div class="card-header bg-warning text-white">
                   <div class="d-flex align-items-center">
@@ -663,7 +663,7 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
               </div>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-6">
               <div class="card mb-4">
                 <div class="card-header">
                   <h4 class="card-title">Payment Confirmation</h4>
