@@ -4,14 +4,19 @@ require('../db/config.php');
 require('../db/functions.php');
 
 // Check if user is logged in
-if (!isset($_SESSION['username'])) {
+if (!isset($_SESSION['user_id'])) {
     header('Location: ../login.php');
     exit;
 }
 
 // Get user details
-extract(get_user_details($_SESSION['username']));
-$user_id = $bmid;
+$user_id = (int) $_SESSION['user_id'];
+$user_details = get_user_details($user_id);
+if (!$user_details) {
+    header('Location: ../login.php');
+    exit;
+}
+$full_name = trim((string) ($user_details['first_name'] ?? '') . ' ' . (string) ($user_details['last_name'] ?? ''));
 
 // Get current wallet balance
 $current_balance = get_user_wallet_balance($user_id);
@@ -216,7 +221,7 @@ $credit_transactions = QueryDB("SELECT * FROM wallet_transactions WHERE user_id 
         <div class="modal-dialog" role="document">
           <div class="modal-content">
             <div class="modal-header">
-              <h5 class="modal-title">Deposit Money - <?php echo htmlspecialchars($_SESSION['username']); ?></h5>
+              <h5 class="modal-title">Deposit Money - <?php echo htmlspecialchars($full_name !== '' ? $full_name : 'User'); ?></h5>
               <button type="button" class="close" data-dismiss="modal" aria-label="Close">
                 <span aria-hidden="true">&times;</span>
               </button>

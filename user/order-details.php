@@ -5,19 +5,24 @@ require('../db/config.php');
 require('../db/functions.php');
 
 // Redirect to login page if not logged in
-if (!isset($_SESSION['username'])) {
-    header('Location: logout.php');
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../login.php');
     exit;
 }
 
 // Get user data and order ID
-$user_data = get_user_details($_SESSION['username']);
-extract($user_data);
+$user_id = (int) $_SESSION['user_id'];
+$user_data = get_user_details($user_id);
+if (!$user_data) {
+    header('Location: ../login.php');
+    exit;
+}
+$full_name = trim((string) ($user_data['first_name'] ?? '') . ' ' . (string) ($user_data['last_name'] ?? ''));
 $order_id = isset($_GET['order_id']) ? intval($_GET['order_id']) : 0;
 
 try {
     // Fetch order details
-    $stmt = QueryDB("SELECT * FROM orders WHERE id = ? AND user_id = ?", [$order_id, $bmid]);
+    $stmt = QueryDB("SELECT * FROM orders WHERE id = ? AND user_id = ?", [$order_id, $user_id]);
     $order = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$order) {
@@ -204,14 +209,14 @@ try {
               <!-- <h6 class="op-7 mb-2">Free Bootstrap 5 Admin Dashboard</h6> -->
             </div>
             <div class="ms-md-auto py-2 py-md-0">
-              <?php  if ($order['order_status'] === 'processing'): ?>
+              <?php  if (($order['order_status'] ?? $order['status'] ?? '') === 'processing'): ?>
               <span class=" badge badge-info">Order Processing</span>
-              <?php elseif ($order['order_status'] === 'approved'): ?>
+              <?php elseif (($order['order_status'] ?? $order['status'] ?? '') === 'approved'): ?>
               <span class=" badge badge-success">Order Approved</span>
-              <?php elseif ($order['order_status'] === 'rejected'): ?>
+              <?php elseif (($order['order_status'] ?? $order['status'] ?? '') === 'rejected'): ?>
               <span class="badge badge-danger">Order Rejected</span>
               <?php endif; ?>
-              <a href="my-orders" class="btn btn-primary btn-round">My Orders</a>
+              <a href="my-orders.php" class="btn btn-primary btn-round">My Orders</a>
             </div>
           </div>
           <div class='row'>
@@ -221,8 +226,9 @@ try {
                   <div class="">
                     <div class="d-flex justify-content-between align-items-center mb-4">
                       <h2>Order #<?php echo htmlspecialchars($order['order_number']); ?></h2>
-                      <span class="order-status status-<?php echo $order['order_status']; ?>">
-                        <?php echo ucfirst($order['order_status']); ?>
+                      <?php $orderStatus = $order['order_status'] ?? $order['status'] ?? 'pending'; ?>
+                      <span class="order-status status-<?php echo $orderStatus; ?>">
+                        <?php echo ucfirst($orderStatus); ?>
                       </span>
                     </div>
                     <div class="order-info-grid">
@@ -231,7 +237,7 @@ try {
                         <p><strong>Order Date:</strong>
                           <?php echo date('F j, Y g:i A', strtotime($order['created_at'])); ?>
                         </p>
-                        <p><strong>Payee Name:</strong> <?php echo htmlspecialchars($order['full_name']); ?></p>
+                        <p><strong>Payee Name:</strong> <?php echo htmlspecialchars((string) ($order['full_name'] ?? $full_name ?: 'N/A')); ?></p>
                         <p><strong>Payment Method:</strong>
                           <?php echo ucfirst(str_replace('_', ' ', $order['payment_method'])); ?></p>
                         <p><strong>Payment Status:</strong> <span
