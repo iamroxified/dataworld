@@ -304,7 +304,7 @@ function syiAiFormatDateTime(?string $value): string
           </div>
 
           <div class="row">
-            <div class="col-md-7">
+            <div class="col-md-12">
               <div class="card">
                 <div class="card-header">
                   <div class="d-flex align-items-center">
@@ -320,6 +320,7 @@ function syiAiFormatDateTime(?string $value): string
                     <table id="jobs-table" class="display table table-striped table-hover queue-table">
                       <thead>
                         <tr>
+                          <th>SN</th>
                           <th>Student</th>
                           <th>Topic</th>
                           <th>Status</th>
@@ -334,8 +335,9 @@ function syiAiFormatDateTime(?string $value): string
                           </tr>
                         <?php endif; ?>
 
-                        <?php foreach ($jobs as $jobItem): ?>
+                        <?php $sn = 1; foreach ($jobs as $jobItem): ?>
                           <tr>
+                            <td><?php echo $sn; ?></td>
                             <td>
                               <strong><?php echo htmlspecialchars((string) $jobItem['student_name']); ?></strong><br>
                               <small class="text-muted"><?php echo htmlspecialchars((string) $jobItem['student_email']); ?></small>
@@ -355,21 +357,10 @@ function syiAiFormatDateTime(?string $value): string
                               </a>
                             </td>
                           </tr>
-                        <?php endforeach; ?>
+                        <?php $sn++; endforeach; ?>
                       </tbody>
                     </table>
                   </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="col-md-5">
-              <div class="card">
-                <div class="card-header">
-                  <h4 class="card-title">Selected Job</h4>
-                </div>
-                <div class="card-body">
-                  <p class="text-muted mb-0">Open a job from the queue to view details.</p>
                 </div>
               </div>
             </div>
