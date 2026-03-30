@@ -769,9 +769,13 @@ function adminAiAdvanceStepGeneration(string $jobUuid, string $projectRoot): voi
 
         $chapterPath = syiAiAbsolutePath($projectRoot, $job['chapters_path'] ?? null);
         $datasetPath = syiAiAbsolutePath($projectRoot, $job['dataset_path'] ?? null);
+        $manualInputs = syiAiExtractManualInputsFromNotes((string) ($job['admin_notes'] ?? ''));
         $coverage = syiAiAssessInputCoverage($job['chapters_text'] ?? '', $job['dataset_summary_json'] ?? '', [
             'has_chapter_file' => $chapterPath && is_file($chapterPath),
             'has_questionnaire_file' => $datasetPath && is_file($datasetPath),
+            'manual_objectives' => $manualInputs['has_objectives'],
+            'manual_questions' => $manualInputs['has_questions'],
+            'manual_hypotheses' => $manualInputs['has_hypotheses'],
         ]);
         if (!empty($coverage['missing'])) {
             adminAiPersistFailure(
@@ -1058,9 +1062,13 @@ function adminAiProcessJob(string $jobUuid, string $projectRoot): void
 
         $chapterPath = syiAiAbsolutePath($projectRoot, $job['chapters_path'] ?? null);
         $datasetPath = syiAiAbsolutePath($projectRoot, $job['dataset_path'] ?? null);
+        $manualInputs = syiAiExtractManualInputsFromNotes((string) ($job['admin_notes'] ?? ''));
         $coverage = syiAiAssessInputCoverage($job['chapters_text'] ?? '', $job['dataset_summary_json'] ?? '', [
             'has_chapter_file' => $chapterPath && is_file($chapterPath),
             'has_questionnaire_file' => $datasetPath && is_file($datasetPath),
+            'manual_objectives' => $manualInputs['has_objectives'],
+            'manual_questions' => $manualInputs['has_questions'],
+            'manual_hypotheses' => $manualInputs['has_hypotheses'],
         ]);
         if (!empty($coverage['missing'])) {
             throw new RuntimeException(

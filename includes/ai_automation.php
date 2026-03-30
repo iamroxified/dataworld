@@ -483,6 +483,50 @@ function syiAiHasDatasetSummary(?string $datasetSummaryJson): bool
     return is_array($decoded) && $decoded !== [];
 }
 
+function syiAiExtractManualInputsFromNotes(string $notes): array
+{
+    $result = [
+        'has_sample_size' => false,
+        'has_objectives' => false,
+        'has_questions' => false,
+        'has_hypotheses' => false,
+        'sample_size' => null,
+        'block' => '',
+    ];
+
+    if (trim($notes) === '') {
+        return $result;
+    }
+
+    if (preg_match('/\\[MANUAL_INPUTS\\](.*?)\\[\\/MANUAL_INPUTS\\]/s', $notes, $matches) !== 1) {
+        return $result;
+    }
+
+    $block = trim((string) $matches[1]);
+    $result['block'] = $block;
+
+    if (preg_match('/Sample\\s*Size\\s*:\\s*(\\d+)/i', $block, $sizeMatch) === 1) {
+        $result['has_sample_size'] = true;
+        $result['sample_size'] = (int) $sizeMatch[1];
+    }
+
+    if (preg_match('/Aims?\\s*and\\s*Objectives\\s*:\\s*(.+)/is', $block) === 1) {
+        $result['has_objectives'] = true;
+    } elseif (preg_match('/Objectives\\s*:\\s*(.+)/is', $block) === 1) {
+        $result['has_objectives'] = true;
+    }
+
+    if (preg_match('/Research\\s*Questions?\\s*:\\s*(.+)/is', $block) === 1) {
+        $result['has_questions'] = true;
+    }
+
+    if (preg_match('/Hypotheses\\s*:\\s*(.+)/is', $block) === 1) {
+        $result['has_hypotheses'] = true;
+    }
+
+    return $result;
+}
+
 function syiAiAssessInputCoverage(?string $chaptersText, ?string $datasetSummaryJson, array $hints = []): array
 {
     $chaptersText = trim((string) $chaptersText);
@@ -571,6 +615,19 @@ function syiAiAssessInputCoverage(?string $chaptersText, ?string $datasetSummary
     if (!empty($hints['has_questionnaire_file'])) {
         $hasQuestionnaireText = true;
         $hasQuestionnaire = true;
+    }
+
+    if (!empty($hints['manual_objectives'])) {
+        $hasChapterOne = true;
+        $hasObjectives = true;
+    }
+    if (!empty($hints['manual_questions'])) {
+        $hasChapterOne = true;
+        $hasResearchQuestions = true;
+    }
+    if (!empty($hints['manual_hypotheses'])) {
+        $hasChapterOne = true;
+        $hasHypotheses = true;
     }
 
     $missing = [];
@@ -1686,7 +1743,12 @@ function syiAiBuildGenerationUserPrompt(array $job): string
     $chapterOneExcerpt = syiAiTruncate(syiAiExtractChapterOneText($chaptersText), 4500);
     $chapterThreeExcerpt = syiAiTruncate(syiAiExtractChapterThreeText($chaptersText), 4500);
     $questionnaireExcerpt = syiAiTruncate(syiAiExtractQuestionnaireText($chaptersText), 3500);
-    $inputCoverage = syiAiAssessInputCoverage($chaptersText, (string) ($job['dataset_summary_json'] ?? ''));
+    $manualInputs = syiAiExtractManualInputsFromNotes((string) ($job['admin_notes'] ?? ''));
+    $inputCoverage = syiAiAssessInputCoverage($chaptersText, (string) ($job['dataset_summary_json'] ?? ''), [
+        'manual_objectives' => $manualInputs['has_objectives'],
+        'manual_questions' => $manualInputs['has_questions'],
+        'manual_hypotheses' => $manualInputs['has_hypotheses'],
+    ]);
     $degreeLevel = (string) ($job['degree_level'] ?? 'BSc/HND');
     $targetPages = (int) ($job['target_pages'] ?? syiAiRecommendedPagesForDegree($degreeLevel));
     $analysisPackage = [
@@ -1713,6 +1775,7 @@ function syiAiBuildGenerationUserPrompt(array $job): string
         'topic_outline' => syiAiTruncate((string) ($job['chapter_outline_markdown'] ?? ''), 2500),
         'dataset_summary' => $compactDatasetSummary,
         'admin_notes' => (string) ($job['admin_notes'] ?? ''),
+        'manual_inputs' => $manualInputs,
         'workflow_order' => 'Tables -> Graphs -> Interpretation -> Source',
         'section_numbering_rule' => 'All sections and subsections must be properly numbered in academic format such as 4.1, 4.2, 5.1, 6.1.',
         'special_rules' => [

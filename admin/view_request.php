@@ -28,6 +28,36 @@ $message = $_SESSION['message'] ?? '';
 $messageType = $_SESSION['message_type'] ?? '';
 unset($_SESSION['message'], $_SESSION['message_type']);
 
+function adminBuildManualInputsBlock(array $values): string
+{
+    $sampleSize = trim((string) ($values['manual_sample_size'] ?? ''));
+    $objectives = trim((string) ($values['manual_objectives'] ?? ''));
+    $questions = trim((string) ($values['manual_research_questions'] ?? ''));
+    $hypotheses = trim((string) ($values['manual_hypotheses'] ?? ''));
+
+    $lines = [
+        '[MANUAL_INPUTS]',
+        'Sample Size: ' . ($sampleSize !== '' ? $sampleSize : 'N/A'),
+        'Aims and Objectives:',
+        $objectives !== '' ? $objectives : 'N/A',
+        'Research Questions:',
+        $questions !== '' ? $questions : 'N/A',
+        'Hypotheses:',
+        $hypotheses !== '' ? $hypotheses : 'N/A',
+        '[/MANUAL_INPUTS]',
+    ];
+
+    return implode("\n", $lines);
+}
+
+function adminMergeManualInputsIntoNotes(string $notes, string $block): string
+{
+    $notes = trim($notes);
+    $cleaned = trim((string) preg_replace('/\\[MANUAL_INPUTS\\].*?\\[\\/MANUAL_INPUTS\\]/s', '', $notes));
+    $merged = trim($block . "\n\n" . $cleaned);
+    return trim($merged);
+}
+
 try {
     syiAiLoadDependencies($projectRoot);
 } catch (Throwable $throwable) {
@@ -262,9 +292,14 @@ function adminComputeAutomationCoverage(array $request, string $projectRoot): ar
     $hasChapterFile = !empty($request['chapter3_file']) && $chaptersAbsolutePath && is_file($chaptersAbsolutePath);
     $hasQuestionnaireFile = !empty($request['questionaire']) && $questionaireAbsolutePath && is_file($questionaireAbsolutePath);
 
+    $manualInputs = syiAiExtractManualInputsFromNotes((string) ($request['admin_notes'] ?? ''));
+
     return syiAiAssessInputCoverage($chaptersText, $datasetSummaryJson, [
         'has_chapter_file' => $hasChapterFile,
         'has_questionnaire_file' => $hasQuestionnaireFile,
+        'manual_objectives' => $manualInputs['has_objectives'],
+        'manual_questions' => $manualInputs['has_questions'],
+        'manual_hypotheses' => $manualInputs['has_hypotheses'],
     ]);
 }
 
@@ -346,6 +381,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['message_type'] = 'success';
             }
 
+            header("Location: view_request.php?id={$requestId}");
+            exit;
+        }
+
+        if (isset($_POST['save_manual_inputs'])) {
+            if (!syiAiValidateCsrf($_POST['csrf_token'] ?? null)) {
+                throw new RuntimeException('Invalid manual input form token. Please refresh and try again.');
+            }
+
+            $block = adminBuildManualInputsBlock($_POST);
+            $_SESSION['manual_inputs'][$requestId] = $block;
+
+            $automationJob = adminFetchAutomationJob($pdo, $requestId);
+            if ($automationJob) {
+                $currentNotes = (string) ($automationJob['admin_notes'] ?? '');
+                $mergedNotes = adminMergeManualInputsIntoNotes($currentNotes, $block);
+                $stmt = $pdo->prepare('UPDATE student_jobs SET admin_notes = ?, updated_at = NOW() WHERE job_uuid = ?');
+                $stmt->execute([$mergedNotes, (string) $automationJob['job_uuid']]);
+            }
+
+            $_SESSION['message'] = 'Manual inputs saved. You can proceed with automation.';
+            $_SESSION['message_type'] = 'success';
             header("Location: view_request.php?id={$requestId}");
             exit;
         }
@@ -497,6 +554,10 @@ if (!$request) {
 }
 
 $automationJob = adminFetchAutomationJob($pdo, $requestId);
+$manualBlock = $_SESSION['manual_inputs'][$requestId] ?? '';
+if ($automationJob) {
+    $manualBlock = $manualBlock !== '' ? $manualBlock : (string) ($automationJob['admin_notes'] ?? '');
+}
 $inputCoverage = adminComputeAutomationCoverage($request, $projectRoot);
 $automationBlocked = !empty($inputCoverage['missing']);
 $selectedDegreeLevel = $automationJob && isset($automationJob['degree_level'])
@@ -686,6 +747,36 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
                       <strong>Automation paused:</strong> Missing required inputs: <?php echo htmlspecialchars(implode(', ', $inputCoverage['missing']), ENT_QUOTES, 'UTF-8'); ?>.
                       Upload the items below to proceed.
                     </div>
+
+                    <div class="card mb-3">
+                      <div class="card-header">
+                        <h5 class="card-title mb-0">Manual Inputs (Admin)</h5>
+                      </div>
+                      <div class="card-body">
+                        <form method="post">
+                          <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars(syiAiCsrfToken(), ENT_QUOTES, 'UTF-8'); ?>">
+                          <div class="form-group mb-3">
+                            <label class="form-label">Sample Size (optional)</label>
+                            <input type="number" class="form-control" name="manual_sample_size" min="1" placeholder="e.g. 100">
+                          </div>
+                          <div class="form-group mb-3">
+                            <label class="form-label">Aims and Objectives</label>
+                            <textarea class="form-control" name="manual_objectives" rows="4" required placeholder="List the aims and objectives"></textarea>
+                          </div>
+                          <div class="form-group mb-3">
+                            <label class="form-label">Research Questions</label>
+                            <textarea class="form-control" name="manual_research_questions" rows="4" required placeholder="List the research questions"></textarea>
+                          </div>
+                          <div class="form-group mb-3">
+                            <label class="form-label">Hypotheses</label>
+                            <textarea class="form-control" name="manual_hypotheses" rows="4" required placeholder="List the hypotheses"></textarea>
+                          </div>
+                          <button type="submit" name="save_manual_inputs" class="btn btn-outline-primary">
+                            Save Manual Inputs
+                          </button>
+                        </form>
+                      </div>
+                    </div>
                   <?php endif; ?>
 
                   <div class="mb-3">
@@ -795,7 +886,13 @@ $selectedTargetPages = $automationJob && isset($automationJob['target_pages'])
                     </div>
                     <div class="form-group mb-3">
                       <label class="form-label">Admin Notes</label>
-                      <textarea class="form-control" name="admin_notes" rows="3"><?php echo htmlspecialchars((string) ($automationJob['admin_notes'] ?? '')); ?></textarea>
+                      <?php
+                        $baseNotes = (string) ($automationJob['admin_notes'] ?? '');
+                        if ($manualBlock !== '' && preg_match('/\\[MANUAL_INPUTS\\]/', $baseNotes) !== 1) {
+                            $baseNotes = adminMergeManualInputsIntoNotes($baseNotes, $manualBlock);
+                        }
+                      ?>
+                      <textarea class="form-control" name="admin_notes" rows="3"><?php echo htmlspecialchars($baseNotes); ?></textarea>
                     </div>
                     <button type="submit" name="trigger_automation" class="btn btn-success w-100" <?php echo ($request['payment_status'] !== 'completed' || $automationBlocked) ? 'disabled' : ''; ?>>
                       Trigger Automation
