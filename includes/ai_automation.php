@@ -3003,7 +3003,7 @@ function syiAiChartFontPath(): ?string
     return $fontPath;
 }
 
-function syiAiChartWriteText($image, string $text, int $x, int $y, int $color, int $fontSize = 14, string $align = 'left', float $angle = 0.0): void
+function syiAiChartWriteText($image, string $text, int $x, int $y, int $color, int $fontSize = 16, string $align = 'left', float $angle = 0.0): void
 {
     $text = trim($text);
     if ($text === '') {
@@ -3058,7 +3058,7 @@ function syiAiChartWrapLines(string $text, int $maxChars = 18, int $maxLines = 2
     return $lines;
 }
 
-function syiAiChartWriteWrappedText($image, string $text, int $centerX, int $topY, int $color, int $fontSize = 14, int $maxChars = 18, int $maxLines = 2): void
+function syiAiChartWriteWrappedText($image, string $text, int $centerX, int $topY, int $color, int $fontSize = 16, int $maxChars = 18, int $maxLines = 2): void
 {
     $lineHeight = $fontSize + 6;
 
@@ -3095,7 +3095,7 @@ function syiAiDrawBarChart($image, array $labels, array $values, int $barColor, 
     for ($step = 0; $step <= 5; $step++) {
         $y = $bottom - (int) (($bottom - $top) * ($step / 5));
         imageline($image, $left, $y, $right, $y, $gridColor);
-        syiAiChartWriteText($image, (string) round(($maxValue / 5) * $step, 2), $left - 20, $y + 6, $textColor, 16, 'right');
+        syiAiChartWriteText($image, (string) round(($maxValue / 5) * $step, 2), $left - 20, $y + 6, $textColor, 18, 'right');
     }
 
     $chartWidth = $right - $left;
@@ -3109,8 +3109,8 @@ function syiAiDrawBarChart($image, array $labels, array $values, int $barColor, 
         $barHeight = (int) (($numericValue / $maxValue) * ($bottom - $top - 10));
         $y1 = $bottom - $barHeight;
         imagefilledrectangle($image, $x1, $y1, $x2, $bottom - 1, $barColor);
-        syiAiChartWriteText($image, (string) round($numericValue, 2), (int) (($x1 + $x2) / 2), max($top + 18, $y1 - 12), $textColor, 15, 'center');
-        syiAiChartWriteWrappedText($image, (string) ($labels[$index] ?? 'Item'), (int) (($x1 + $x2) / 2), $bottom + 20, $textColor, 14, 16, 3);
+        syiAiChartWriteText($image, (string) round($numericValue, 2), (int) (($x1 + $x2) / 2), max($top + 18, $y1 - 12), $textColor, 18, 'center');
+        syiAiChartWriteWrappedText($image, (string) ($labels[$index] ?? 'Item'), (int) (($x1 + $x2) / 2), $bottom + 20, $textColor, 16, 16, 3);
     }
 }
 
@@ -3134,7 +3134,7 @@ function syiAiDrawLineChart($image, array $labels, array $values, int $lineColor
     for ($step = 0; $step <= 5; $step++) {
         $y = $bottom - (int) (($bottom - $top) * ($step / 5));
         imageline($image, $left, $y, $right, $y, $gridColor);
-        syiAiChartWriteText($image, (string) round(($maxValue / 5) * $step, 2), $left - 20, $y + 6, $textColor, 16, 'right');
+        syiAiChartWriteText($image, (string) round(($maxValue / 5) * $step, 2), $left - 20, $y + 6, $textColor, 18, 'right');
     }
 
     $chartWidth = $right - $left;
@@ -3150,8 +3150,8 @@ function syiAiDrawLineChart($image, array $labels, array $values, int $lineColor
         }
 
         imagefilledellipse($image, $x, $y, 18, 18, $lineColor);
-        syiAiChartWriteWrappedText($image, (string) ($labels[$index] ?? 'Item'), $x, $bottom + 20, $textColor, 14, 16, 3);
-        syiAiChartWriteText($image, (string) round($numericValue, 2), $x, max($top + 18, $y - 18), $textColor, 15, 'center');
+        syiAiChartWriteWrappedText($image, (string) ($labels[$index] ?? 'Item'), $x, $bottom + 20, $textColor, 16, 16, 3);
+        syiAiChartWriteText($image, (string) round($numericValue, 2), $x, max($top + 18, $y - 18), $textColor, 18, 'center');
         $previousPoint = ['x' => $x, 'y' => $y];
     }
 }
@@ -3198,7 +3198,7 @@ function syiAiDrawPieChart($image, array $labels, array $values, array $palette,
             $legendX + 170,
             $legendY - 6,
             $textColor,
-            15,
+            17,
             24,
             2
         );
